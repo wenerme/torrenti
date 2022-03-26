@@ -10,7 +10,6 @@ import (
 
 type MetaFile struct {
 	Model
-	Path         string
 	Filename     string
 	ContentHash  string `gorm:"unique"`
 	TorrentHash  string `gorm:"index"`

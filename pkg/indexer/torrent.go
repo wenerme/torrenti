@@ -11,8 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
+	"github.com/wenerme/torrenti/pkg/indexer/util"
 	"github.com/wenerme/torrenti/pkg/magnet"
 	"github.com/xgfone/bt/metainfo"
 )
@@ -46,27 +46,33 @@ type Torrent struct {
 	Data     []byte
 	Meta     *metainfo.MetaInfo
 	URL      string
+	Response *http.Response
 }
 
 func (t *Torrent) Load() (err error) {
 	switch {
 	case t.URL != "":
-		var resp *http.Response
-		resp, err = http.Get(t.URL)
-		if err == nil {
+		if t.Response == nil && t.Data == nil {
+			t.Response, err = http.Get(t.URL)
+			if err != nil {
+				return
+			}
+		}
+		resp := t.Response
+		if t.Data == nil {
 			defer resp.Body.Close()
 			t.Data, err = io.ReadAll(resp.Body)
 		}
 		if err != nil {
 			return
 		}
-
-		_, params, _ := mime.ParseMediaType(resp.Header.Get("Content-Disposition"))
-		fi := &fileInfo{}
-		fi.name = params["filename"]
-		fi.size = int64(len(t.Data))
-		t.FileInfo = fi
-
+		if t.FileInfo == nil {
+			_, params, _ := mime.ParseMediaType(resp.Header.Get("Content-Disposition"))
+			fi := &util.File{}
+			fi.Path = params["filename"]
+			fi.Length = int64(len(t.Data))
+			t.FileInfo = fi
+		}
 	case t.File != "":
 		var f *os.File
 
@@ -81,6 +87,7 @@ func (t *Torrent) Load() (err error) {
 		}
 
 	case !t.Magnet.Hash.IsZero():
+		// dht.Config{}
 		err = errors.New("TODO: load magnet")
 	default:
 		err = errors.New("invalid torrent info")
@@ -103,39 +110,4 @@ func (t *Torrent) loadData() (err error) {
 		Hash: t.Hash,
 	}
 	return
-}
-
-var _ fs.FileInfo = fileInfo{}
-
-type fileInfo struct {
-	name string
-	size int64
-	mode os.FileMode
-	mod  time.Time
-	dir  bool
-	sys  any
-}
-
-func (f fileInfo) Name() string {
-	return f.name
-}
-
-func (f fileInfo) Size() int64 {
-	return f.size
-}
-
-func (f fileInfo) Mode() fs.FileMode {
-	return f.mode
-}
-
-func (f fileInfo) ModTime() time.Time {
-	return f.mod
-}
-
-func (f fileInfo) IsDir() bool {
-	return f.dir
-}
-
-func (f fileInfo) Sys() any {
-	return f.sys
 }

@@ -43,11 +43,36 @@ func NewIndexer(o NewIndexerOptions) (*Indexer, error) {
 	return idx, nil
 }
 
-func (idx *Indexer) IndexTorrent(t *Torrent) (err error) {
+type IndexTorrentResult struct {
+	MetaCount            int64
+	TorrentCount         int64
+	TorrentFileCount     int64
+	TorrentFileTotalSize int64
+}
+
+type IndexTorrentOptions struct {
+	Stat *IndexTorrentResult
+}
+
+func (idx *Indexer) IndexTorrent(t *Torrent, opts ...func(o *IndexTorrentOptions)) (stat *IndexTorrentResult, err error) {
+	o := &IndexTorrentOptions{
+		Stat: &IndexTorrentResult{},
+	}
+	for _, f := range opts {
+		f(o)
+	}
+	stat = o.Stat
+
+	if t.Meta == nil {
+		err = t.Load()
+		if err != nil {
+			return
+		}
+	}
+
 	mi := t.Meta
 
 	mf := models.MetaFile{
-		Path:         t.File,
 		Filename:     t.FileInfo.Name(),
 		ContentHash:  contentHash(t.Data),
 		TorrentHash:  t.Hash.String(),
@@ -64,22 +89,23 @@ func (idx *Indexer) IndexTorrent(t *Torrent) (err error) {
 	err = bencode.NewDecoder(bytes.NewReader(t.Data)).Decode(&m)
 	err = errors.Wrap(err, "decode data")
 	if err != nil {
-		return err
+		return
 	}
 	delete(m, "info")
 	mf.Raw, err = json.Marshal(m)
 	err = errors.Wrap(err, "json.Marshal data")
 	if err != nil {
-		return err
+		return
 	}
 	{
 		ret := idx.DB.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "content_hash"}},
-			DoUpdates: clause.AssignmentColumns([]string{"path", "size"}),
+			DoNothing: true,
 		}).Create(&mf)
 		if err = ret.Error; err != nil {
-			return err
+			return
 		}
+		stat.MetaCount += ret.RowsAffected
 		log.Debug().
 			Str("path", t.File).Str("size", humanize.Bytes(uint64(t.FileInfo.Size()))).
 			Int64("affected", ret.RowsAffected).
@@ -88,7 +114,7 @@ func (idx *Indexer) IndexTorrent(t *Torrent) (err error) {
 
 	info, err := mi.Info()
 	if err != nil {
-		return err
+		return
 	}
 	files := info.AllFiles()
 	tt := models.Torrent{
@@ -106,8 +132,10 @@ func (idx *Indexer) IndexTorrent(t *Torrent) (err error) {
 			DoNothing: true,
 		}).Create(&tt)
 		if err = ret.Error; err != nil {
-			return err
+			return
 		}
+		stat.TorrentCount += ret.RowsAffected
+		stat.TorrentFileTotalSize += tt.TotalSize
 		log.Debug().
 			Str("name", info.Name).Int("files", tt.FileCount).Str("size", humanize.Bytes(uint64(tt.TotalSize))).
 			Int64("affected", ret.RowsAffected).
@@ -133,8 +161,9 @@ func (idx *Indexer) IndexTorrent(t *Torrent) (err error) {
 			DoNothing: true,
 		}).Create(&tf)
 		if err = ret.Error; err != nil {
-			return err
+			return
 		}
+		stat.TorrentFileCount += ret.RowsAffected
 		log.Trace().
 			Str("file", tf.Filename).Str("size", humanize.Bytes(uint64(tf.Size))).
 			Int64("affected", ret.RowsAffected).
