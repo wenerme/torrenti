@@ -1,6 +1,6 @@
 //go:build !cgo
 
-package indexer
+package torrenti
 
 import "github.com/rs/zerolog/log"
 

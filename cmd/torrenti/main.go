@@ -9,28 +9,28 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/adrg/xdg"
+	"github.com/pkg/errors"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 
 	"github.com/caarlos0/env/v6"
 	"github.com/dustin/go-humanize"
 	"github.com/gocolly/colly"
 	cli "github.com/urfave/cli/v2"
-	"github.com/wenerme/torrenti/pkg/indexer/scraper"
-	"github.com/wenerme/torrenti/pkg/indexer/util"
+	"github.com/wenerme/torrenti/pkg/torrenti/scraper"
+	"github.com/wenerme/torrenti/pkg/torrenti/util"
 	"gopkg.in/yaml.v3"
 
-	"github.com/wenerme/torrenti/pkg/indexer/models"
+	"github.com/wenerme/torrenti/pkg/torrenti/models"
 	"go.uber.org/multierr"
 
 	_ "github.com/glebarez/go-sqlite"
-	"github.com/pkg/errors"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-	"github.com/wenerme/torrenti/pkg/indexer"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
+	"github.com/wenerme/torrenti/pkg/torrenti"
 )
 
 const Name = "torrenti"
@@ -92,6 +92,12 @@ func main() {
 						Name:   "scrape",
 						Usage:  "scrape web pages",
 						Action: scrapeTorrent,
+						Flags: []cli.Flag{
+							&cli.BoolFlag{
+								Name:  "fatal",
+								Usage: "stop when error occurs",
+							},
+						},
 					},
 				},
 			},
@@ -133,7 +139,7 @@ func setup(ctx *cli.Context) error {
 			l = lvl
 		}
 		output := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
-		log.Logger = zerolog.New(output).Level(l).With().Timestamp().Logger()
+		log.Logger = zerolog.New(output).Level(l).With().Stack().Timestamp().Logger()
 	}
 
 	cfgFile := os.ExpandEnv(ctx.String("config"))
@@ -176,16 +182,7 @@ func setup(ctx *cli.Context) error {
 			conf.PluginDir = "bin/plugins"
 		}
 	}
-
-	if conf.RootDir != "" {
-		conf.DataDir = defaultTo(conf.DataDir, filepath.Join(conf.RootDir, "data"))
-		conf.CacheDir = defaultTo(conf.CacheDir, filepath.Join(conf.RootDir, "cache"))
-		conf.ConfigDir = defaultTo(conf.ConfigDir, filepath.Join(conf.RootDir, "config"))
-	} else {
-		conf.DataDir = defaultTo(conf.DataDir, filepath.Join(xdg.DataHome, Name))
-		conf.CacheDir = defaultTo(conf.CacheDir, filepath.Join(xdg.CacheHome, Name))
-		conf.ConfigDir = defaultTo(conf.ConfigDir, filepath.Join(xdg.ConfigHome, Name))
-	}
+	conf.InitDirConf(Name)
 
 	log.Debug().Str("config_dir", conf.ConfigDir).Msg("conf")
 	log.Debug().Str("data_dir", conf.DataDir).Msg("conf")
@@ -198,13 +195,81 @@ func setup(ctx *cli.Context) error {
 		return err
 	}
 	_ctx = ctx
-	err = indexer.LoadPlugins(indexer.LoadPluginOptions{
+	err = torrenti.LoadPlugins(torrenti.LoadPluginOptions{
 		Dir: conf.PluginDir,
 	})
 	if err != nil {
 		return err
 	}
 
+	return err
+}
+
+func scrapeTorrent(ctx *cli.Context) error {
+	cache := filepath.Join(_conf.CacheDir, "web")
+	if err := os.MkdirAll(cache, 0o755); err != nil {
+		log.Fatal().Err(err).Msg("make cache dir")
+	}
+	log.Debug().Str("cache_dir", cache).Msg("cache dir")
+	if ctx.NArg() != 1 {
+		log.Fatal().Msgf("must scrap only one url got %v", ctx.NArg())
+	}
+	first := ctx.Args().First()
+	u, err := url.Parse(first)
+	if err != nil {
+		log.Fatal().Err(err).Msg("invalid url")
+	}
+	opts := &scraper.ScrapeOptions{
+		Fatal: !ctx.Bool("fatal"),
+	}
+	ct := context.Background()
+	ct = torrenti.IndexerContextKey.WithValue(ct, getIndexer())
+	ct = util.DirConfContextKey.WithValue(ct, &_conf.DirConf)
+	ct = scraper.OptionContextKey.WithValue(ct, opts)
+
+	c := colly.NewCollector(
+		colly.CacheDir(cache),
+		scraper.InitCollector(ct, u),
+	)
+
+	scraper.SetupCollector(ct, u)(c)
+	return c.Visit(first)
+}
+
+func addTorrent(ctx *cli.Context) error {
+	idx := getIndexer()
+	for _, v := range ctx.Args().Slice() {
+		log.Info().Str("torrent", v).Msg("add torrent")
+		t, err := torrenti.ParseTorrent(v)
+		if err != nil {
+			return err
+		}
+		err = t.Load()
+		if err != nil {
+			return err
+		}
+		_, err = idx.IndexTorrent(t)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var (
+	_indexer     *torrenti.Indexer
+	_indexerOnce = new(sync.Once)
+	_ctx         *cli.Context
+)
+
+func getIndexer() *torrenti.Indexer {
+	_indexerOnce.Do(_initIndexer)
+	return _indexer
+}
+
+func _initIndexer() {
+	conf := _conf
+	var err error
 	var gdb *gorm.DB
 	var db *sql.DB
 	var dsn string
@@ -238,76 +303,20 @@ func setup(ctx *cli.Context) error {
 		err = errors.New("unsupported db type: " + conf.DB.Type)
 	}
 	if err != nil {
-		return err
+		panic(err)
 	}
 
-	_indexer, err = indexer.NewIndexer(indexer.NewIndexerOptions{DB: gdb})
-	return err
-}
-
-func scrapeTorrent(ctx *cli.Context) error {
-	cache := filepath.Join(_conf.CacheDir, "web")
-	if err := os.MkdirAll(cache, 0o755); err != nil {
-		log.Fatal().Err(err).Msg("make cache dir")
-	}
-	log.Debug().Str("cache_dir", cache).Msg("cache dir")
-	if ctx.NArg() != 1 {
-		log.Fatal().Msgf("must scrap only one url got %v", ctx.NArg())
-	}
-	first := ctx.Args().First()
-	u, err := url.Parse(first)
+	_indexer, err = torrenti.NewIndexer(torrenti.NewIndexerOptions{DB: gdb})
 	if err != nil {
-		log.Fatal().Err(err).Msg("invalid url")
+		panic(err)
 	}
-	ct := context.Background()
-	ct = indexer.IndexerContextKey.WithValue(ct, getIndexer())
-
-	c := colly.NewCollector(
-		colly.CacheDir(cache),
-		scraper.InitCollector(ct, u),
-	)
-
-	scraper.SetupCollector(ct, u)(c)
-	return c.Visit(first)
-}
-
-func addTorrent(ctx *cli.Context) error {
-	idx := getIndexer()
-	for _, v := range ctx.Args().Slice() {
-		log.Info().Str("torrent", v).Msg("add torrent")
-		t, err := indexer.ParseTorrent(v)
-		if err != nil {
-			return err
-		}
-		err = t.Load()
-		if err != nil {
-			return err
-		}
-		_, err = idx.IndexTorrent(t)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-var (
-	_indexer *indexer.Indexer
-	_ctx     *cli.Context
-)
-
-func getIndexer() *indexer.Indexer {
-	return _indexer
 }
 
 type Config struct {
-	RootDir   string  `env:"ROOT_DIR"`
-	DataDir   string  `env:"DATA_DIR"`
-	CacheDir  string  `env:"CACHE_DIR"`
-	PluginDir string  `env:"PLUGIN_DIR"`
-	ConfigDir string  `env:"CONFIG_DIR"`
-	DB        DBCOnf  `envPrefix:"DB_"`
-	Log       LogConf `envPrefix:"LOG_"`
+	util.DirConf `yaml:",inline"`
+	PluginDir    string  `env:"PLUGIN_DIR"`
+	DB           DBCOnf  `envPrefix:"DB_"`
+	Log          LogConf `envPrefix:"LOG_"`
 }
 
 type DBCOnf struct {
@@ -336,21 +345,29 @@ func showStat(ctx *cli.Context) error {
 		db.Model(models.MetaFile{}).Select("sum(size)").Scan(&st.MetaSize).Error,
 		db.Model(models.Torrent{}).Count(&st.TorrentCount).Error,
 		db.Model(models.TorrentFile{}).Count(&st.FileCount).Error,
-		db.Model(models.Torrent{}).Select("sum(total_size)").Scan(&st.TorrentTotalFileSize).Error,
+		db.Model(models.Torrent{}).Select("sum(total_file_size)").Scan(&st.TorrentTotalFileSize).Error,
+		db.Model(models.Torrent{}).Select("max(total_file_size)").Scan(&st.MaxTorrentSize).Error,
 	)
 	if err != nil {
 		return err
 	}
-
+	err = multierr.Combine(
+		db.Model(models.Torrent{}).Where(models.Torrent{TotalFileSize: st.MaxTorrentSize}).Select("name").Scan(&st.MaxTorrentName).Error,
+	)
+	if err != nil {
+		return err
+	}
 	return printYaml(map[string]interface{}{
 		"meta": map[string]interface{}{
 			"count":           st.MetaCount,
 			"total file size": humanize.Bytes(uint64(st.MetaSize)),
 		},
 		"torrent": map[string]interface{}{
-			"count":      st.TorrentCount,
-			"total size": humanize.Bytes(uint64(st.TorrentTotalFileSize)),
-			"files":      st.FileCount,
+			"count":            st.TorrentCount,
+			"total size":       humanize.Bytes(uint64(st.TorrentTotalFileSize)),
+			"files":            st.FileCount,
+			"max torrent size": humanize.Bytes(uint64(st.MaxTorrentSize)),
+			"max torrent name": st.MaxTorrentName,
 		},
 	})
 }
@@ -359,13 +376,8 @@ type stat struct {
 	MetaCount            int64
 	MetaSize             int64
 	TorrentCount         int64
+	MaxTorrentSize       int64
+	MaxTorrentName       string
 	TorrentTotalFileSize int64
 	FileCount            int64
-}
-
-func defaultTo(v string, def string) string {
-	if v == "" {
-		return def
-	}
-	return v
 }

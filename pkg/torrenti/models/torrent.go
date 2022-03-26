@@ -26,7 +26,7 @@ type MetaFile struct {
 type TorrentFile struct {
 	Model
 	TorrentHash string `gorm:"uniqueIndex:torrent_files_torrent_hash_path"`
-	Size        int64
+	Size        int64  `gorm:"index"`
 	Path        string `gorm:"uniqueIndex:torrent_files_torrent_hash_path"`
 	Filename    string
 	Ext         string
@@ -34,13 +34,13 @@ type TorrentFile struct {
 
 type Torrent struct {
 	Model
-	Hash       string `gorm:"unique"`
-	Name       string
-	TotalSize  int64
-	FileCount  int
-	PieceCount int
-	IsDir      bool
-	InfoBytes  []byte
+	Hash          string `gorm:"unique"`
+	Name          string
+	TotalFileSize int64 `gorm:"index"`
+	FileCount     int
+	PieceCount    int
+	IsDir         bool
+	InfoBytes     []byte
 }
 
 type Model struct {

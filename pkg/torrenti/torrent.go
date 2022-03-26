@@ -1,8 +1,7 @@
-package indexer
+package torrenti
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -12,8 +11,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/wenerme/torrenti/pkg/indexer/util"
+	"github.com/pkg/errors"
+
 	"github.com/wenerme/torrenti/pkg/magnet"
+	"github.com/wenerme/torrenti/pkg/torrenti/util"
 	"github.com/xgfone/bt/metainfo"
 )
 
@@ -89,6 +90,8 @@ func (t *Torrent) Load() (err error) {
 	case !t.Magnet.Hash.IsZero():
 		// dht.Config{}
 		err = errors.New("TODO: load magnet")
+	case t.Data != nil && t.FileInfo != nil:
+		// data ready
 	default:
 		err = errors.New("invalid torrent info")
 	}

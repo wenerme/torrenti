@@ -1,6 +1,8 @@
 package util
 
 import (
+	"bytes"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -14,9 +16,19 @@ type File struct {
 	Length   int64
 	FileMode os.FileMode
 	Modified time.Time
-	Dir      bool
 	Internal any
 	Data     []byte
+}
+
+func (f File) ReadAll() ([]byte, error) {
+	return f.Data, nil
+}
+
+func (f File) Open() (io.ReadCloser, error) {
+	if f.Data != nil {
+		return io.NopCloser(bytes.NewReader(f.Data)), nil
+	}
+	return os.Open(f.Path)
 }
 
 func (f File) Name() string {
@@ -36,7 +48,7 @@ func (f File) ModTime() time.Time {
 }
 
 func (f File) IsDir() bool {
-	return f.Dir
+	return f.FileMode.IsDir()
 }
 
 func (f File) Sys() any {
