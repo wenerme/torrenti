@@ -105,6 +105,7 @@ func (t *Torrent) loadData() (err error) {
 	var meta metainfo.MetaInfo
 
 	meta, err = metainfo.Load(bytes.NewReader(t.Data))
+	err = errors.Wrap(err, "load metainfo")
 	t.Meta = &meta
 	t.Hash = magnet.Hash{
 		Digest: meta.InfoHash().Bytes(),

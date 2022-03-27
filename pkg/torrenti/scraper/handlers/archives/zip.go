@@ -29,6 +29,7 @@ func Unzip(ctx context.Context, in *util.File, cb func(context.Context, *util.Fi
 		log.Warn().Str("path", fn).Msg("file dump")
 		return
 	}
+	// gbk := simplifiedchinese.GB18030.NewDecoder()
 	gbk := simplifiedchinese.GBK.NewDecoder()
 
 	for _, fe := range zr.File {
@@ -45,6 +46,9 @@ func Unzip(ctx context.Context, in *util.File, cb func(context.Context, *util.Fi
 			if err != nil {
 				return errors.Wrap(err, "decode gbk")
 			}
+			// var dr *chardet.Result
+			// dr, err = chardet.NewTextDetector().DetectBest([]byte(filepath.Base(fe.Name)))
+			// log.Debug().Str("zip", in.Path).Str("path", fi.Path).Str("charset", dr.Charset).Msg("unzip gbk decode")
 			log.Debug().Str("zip", in.Path).Str("path", fi.Path).Msg("unzip gbk decode")
 		}
 		if fi.FileMode.IsDir() {

@@ -55,5 +55,5 @@ func init() {
 }
 
 func IsSubtitleExt(ext string) bool {
-	return slices.BinarySearch(subtitleExts, ext) >= 0
+	return util.BinarySearchContain(subtitleExts, ext)
 }

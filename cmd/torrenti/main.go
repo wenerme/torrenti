@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"io/ioutil"
 	"net/url"
@@ -11,10 +10,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/pkg/errors"
-	"gorm.io/driver/sqlite"
-	"gorm.io/gorm"
 
 	"github.com/caarlos0/env/v6"
 	"github.com/dustin/go-humanize"
@@ -81,23 +76,23 @@ func main() {
 				},
 			},
 			{
+				Name:   "scrape",
+				Usage:  "scrape web pages",
+				Action: scrapeTorrent,
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:  "fatal",
+						Usage: "stop when error occurs",
+					},
+				},
+			},
+			{
 				Name: "torrent",
 				Subcommands: cli.Commands{
 					{
 						Name:   "add",
 						Usage:  "add to index",
 						Action: addTorrent,
-					},
-					{
-						Name:   "scrape",
-						Usage:  "scrape web pages",
-						Action: scrapeTorrent,
-						Flags: []cli.Flag{
-							&cli.BoolFlag{
-								Name:  "fatal",
-								Usage: "stop when error occurs",
-							},
-						},
 					},
 				},
 			},
@@ -184,6 +179,10 @@ func setup(ctx *cli.Context) error {
 	}
 	conf.InitDirConf(Name)
 
+	if conf.DB.Type == "sqlite" {
+		conf.DB.Database = filepath.Join(conf.DataDir, "torrenti.sqlite")
+	}
+
 	log.Debug().Str("config_dir", conf.ConfigDir).Msg("conf")
 	log.Debug().Str("data_dir", conf.DataDir).Msg("conf")
 	log.Debug().Str("cache_dir", conf.CacheDir).Msg("conf")
@@ -205,34 +204,62 @@ func setup(ctx *cli.Context) error {
 	return err
 }
 
-func scrapeTorrent(ctx *cli.Context) error {
+func scrapeTorrent(cc *cli.Context) error {
 	cache := filepath.Join(_conf.CacheDir, "web")
 	if err := os.MkdirAll(cache, 0o755); err != nil {
 		log.Fatal().Err(err).Msg("make cache dir")
 	}
 	log.Debug().Str("cache_dir", cache).Msg("cache dir")
-	if ctx.NArg() != 1 {
-		log.Fatal().Msgf("must scrap only one url got %v", ctx.NArg())
+	if cc.NArg() != 1 {
+		log.Fatal().Msgf("must scrap only one url got %v", cc.NArg())
 	}
-	first := ctx.Args().First()
+	first := cc.Args().First()
 	u, err := url.Parse(first)
 	if err != nil {
 		log.Fatal().Err(err).Msg("invalid url")
 	}
 	opts := &scraper.ScrapeOptions{
-		Fatal: !ctx.Bool("fatal"),
+		Seed:  u,
+		Fatal: cc.Bool("fatal"),
 	}
-	ct := context.Background()
-	ct = torrenti.IndexerContextKey.WithValue(ct, getIndexer())
-	ct = util.DirConfContextKey.WithValue(ct, &_conf.DirConf)
-	ct = scraper.OptionContextKey.WithValue(ct, opts)
+	{
+		dirs := _conf.DirConf
+
+		dc := &DBCOnf{
+			Type:     "sqlite",
+			Database: filepath.Join(dirs.CacheDir, "scraper-store.db"),
+		}
+		opts.Store = &scraper.Store{}
+		_, opts.Store.DB, err = newDB(dc)
+		if err != nil {
+			return err
+		}
+		err = opts.Store.DB.AutoMigrate(&models.KV{})
+		if err != nil {
+			return err
+		}
+	}
+	ctx := context.Background()
+	ctx = torrenti.IndexerContextKey.WithValue(ctx, getIndexer())
+	ctx = util.DirConfContextKey.WithValue(ctx, &_conf.DirConf)
+	ctx = scraper.OptionContextKey.WithValue(ctx, opts)
+	ctx, err = scraper.InitContext(ctx)
+	if err != nil {
+		return err
+	}
 
 	c := colly.NewCollector(
 		colly.CacheDir(cache),
-		scraper.InitCollector(ct, u),
 	)
 
-	scraper.SetupCollector(ct, u)(c)
+	if err = scraper.InitCollector(ctx)(c); err != nil {
+		return err
+	}
+
+	if err = scraper.SetupCollector(ctx)(c); err != nil {
+		return err
+	}
+
 	return c.Visit(first)
 }
 
@@ -269,42 +296,8 @@ func getIndexer() *torrenti.Indexer {
 
 func _initIndexer() {
 	conf := _conf
-	var err error
-	var gdb *gorm.DB
-	var db *sql.DB
-	var dsn string
-	var driver string
-	switch conf.DB.Type {
-	case "sqlite":
-		dbFile := conf.DB.Database
-		if conf.DB.Database == "" {
-			dbFile = filepath.Join(conf.DataDir, "torrenti.sqlite")
-		}
-		u := url.URL{
-			Scheme: "file",
-			Path:   dbFile,
-		}
-		dsn = u.String()
-		driver = "sqlite"
-
-		log.Debug().Str("dsn", dsn).Str("driver", driver).Msg("use sqlite")
-
-		db, err = sql.Open("sqlite", dsn)
-		if err != nil {
-			log.Fatal().Err(err).Send()
-		}
-		gdb, err = gorm.Open(sqlite.Dialector{
-			Conn: db,
-		})
-		//if err = gdb.Exec("PRAGMA page_size = ?", 128*1024).Error; err != nil {
-		//	return err
-		//}
-	default:
-		err = errors.New("unsupported db type: " + conf.DB.Type)
-	}
-	if err != nil {
-		panic(err)
-	}
+	db, gdb, err := newDB(&conf.DB)
+	_ = db
 
 	_indexer, err = torrenti.NewIndexer(torrenti.NewIndexerOptions{DB: gdb})
 	if err != nil {
@@ -320,12 +313,18 @@ type Config struct {
 }
 
 type DBCOnf struct {
-	Type     string `env:"TYPE" envDefault:"sqlite"`
-	Driver   string `env:"DRIVER"`
-	Database string `env:"DATABASE"`
-	Username string `env:"USERNAME" envDefault:"torrenti"`
-	Password string `env:"PASSWORD" envDefault:"torrenti"`
-	URL      string `env:"URL"`
+	Type     string     `env:"TYPE" envDefault:"sqlite"`
+	Driver   string     `env:"DRIVER"`
+	Database string     `env:"DATABASE"`
+	Username string     `env:"USERNAME" envDefault:"torrenti"`
+	Password string     `env:"PASSWORD" envDefault:"torrenti"`
+	DSN      string     `env:"DSN"`
+	Log      SQLLogConf `envPrefix:"LOG_"`
+}
+
+type SQLLogConf struct {
+	SlowThreshold  time.Duration `env:"SLOW_THRESHOLD"`
+	IgnoreNotFound bool          `env:"IGNORE_NOT_FOUND"`
 }
 
 type LogConf struct {
