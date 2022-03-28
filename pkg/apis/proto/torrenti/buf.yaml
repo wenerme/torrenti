@@ -1,0 +1,9 @@
+version: v1beta1
+lint:
+  use:
+    - DEFAULT
+  ignore:
+    - google
+breaking:
+  use:
+    - FILE

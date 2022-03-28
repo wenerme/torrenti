@@ -10,6 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gocolly/colly/v2"
+
+	"github.com/wenerme/torrenti/pkg/subi"
+
 	"github.com/rs/zerolog"
 
 	"gorm.io/gorm"
@@ -21,7 +25,6 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/gocolly/colly"
 	"github.com/rs/zerolog/log"
 	"github.com/wenerme/torrenti/pkg/torrenti"
 	"github.com/wenerme/torrenti/pkg/torrenti/scraper"
@@ -48,7 +51,7 @@ func init() {
 			return scraper.OptionContextKey.Must(ctx).Seed.Hostname() == "www.btbtt12.com"
 		},
 		InitCollector: func(ctx context.Context, c *colly.Collector) error {
-			c.SetRequestTimeout(time.Minute)
+			c.SetRequestTimeout(30 * time.Second)
 			// 20MB
 			c.MaxBodySize = 20 * 1024 * 1024
 			c.AllowedDomains = []string{"www.btbtt12.com"}
@@ -83,7 +86,7 @@ func init() {
 					return
 				}
 
-				visited, err := store.IsVisited(o.URL)
+				visited, err := store.IsScraped(o.URL)
 				if err != nil {
 					log.Err(err).Msg("query visit")
 				}
@@ -112,7 +115,7 @@ func init() {
 				log := log.With().Str("url", u).Logger()
 
 				defer func() {
-					if (st.ScrapedCount%1000 == 0 && now.Sub(lastReport) > (time.Second*10)) || now.Sub(st.LastScrapedAt) > (time.Second*30) {
+					if (st.ScrapedCount%1000 == 0 && now.Sub(lastReport) > (time.Second*10)) || now.Sub(lastReport) > (time.Second*30) {
 						lastReport = now
 						report(log)
 					}
@@ -125,7 +128,7 @@ func init() {
 					return
 				}
 
-				if err := store.Visit(u); err != nil {
+				if err := store.MarkScraped(u); err != nil {
 					log.Err(err).Msg("mark visit")
 				} else {
 					log.Trace().Msg("mark visit")
@@ -174,8 +177,11 @@ func init() {
 
 			c.OnRequest(func(r *colly.Request) {
 				st.RequestCount++
-
-				log.Debug().Str("url", r.URL.String()).Msg("visiting")
+				u := r.URL.String()
+				if err := store.MarkVisiting(u); err != nil {
+					log.Err(err).Str("url", u).Msg("mark visiting")
+				}
+				log.Debug().Str("url", u).Msg("visiting")
 			})
 
 			c.OnResponse(func(resp *colly.Response) {
@@ -195,10 +201,9 @@ func init() {
 						Path:   filename,
 						Length: int64(len(resp.Body)),
 						Data:   resp.Body,
+						URL:    resp.Request.URL.String(),
 					}
-					err := handle(ctx, st, fi, &torrenti.Torrent{
-						URL: resp.Request.URL.String(),
-					})
+					err := handle(ctx, st, fi)
 					if err != nil {
 						fatal(
 							log.With().
@@ -217,23 +222,33 @@ func init() {
 	})
 }
 
-func index(ctx context.Context, f *util.File, t *torrenti.Torrent) (err error) {
+func handleSubtitle(ctx context.Context, f *util.File) (err error) {
+	idx := subi.IndexerContextKey.Get(ctx)
+	if idx == nil {
+		log.Trace().Msg("skip subtitle")
+		return
+	}
+	err = idx.Index(f)
+	return
+}
+
+func handleTorrent(ctx context.Context, f *util.File) (err error) {
 	idx := torrenti.IndexerContextKey.Must(ctx)
+	t := &torrenti.Torrent{
+		URL: f.URL,
+	}
 	t.FileInfo = f
 	t.Data = f.Data
-	_, err = idx.IndexTorrent(t)
+	_, err = idx.IndexTorrent(ctx, t)
 	return
 }
 
 var (
 	ignoredExts = []string{}
-	triExts     = []string{".txt", ".docx", ".url", ".ds_store", ".DS_Store", ".db", ".ini"}
+	triExts     = []string{".txt", ".tv", ".url", ".ds_store", ".db", ".sqlite", ".ini"}
 	officeExts  = []string{".docx", ".doc"}
 	imagesExts  = []string{".jpg", ".jpeg", ".png"}
 )
-
-// http://www.btbtt12.com/attach-download-fid-950-aid-2807965.htm
-// .tv
 
 func init() {
 	ignoredExts = append(ignoredExts, triExts...)
@@ -242,15 +257,12 @@ func init() {
 	slices.Sort(ignoredExts)
 }
 
-func handle(ctx context.Context, st *scraper.Stat, f *util.File, t *torrenti.Torrent) (err error) {
+func handle(ctx context.Context, st *scraper.Stat, f *util.File) (err error) {
 	if f.IsDir() {
 		return nil
 	}
-	if t == nil {
-		t = &torrenti.Torrent{}
-	}
 	cb := func(ctx context.Context, file *util.File) error {
-		return handle(ctx, st, file, t)
+		return handle(ctx, st, file)
 	}
 	ext := handlers.Ext(f)
 	fn := f.Name()
@@ -261,17 +273,13 @@ func handle(ctx context.Context, st *scraper.Stat, f *util.File, t *torrenti.Tor
 	log.Trace().Msg("handle")
 
 	switch {
-	case handlers.IsSubtitleExt(ext):
-		log.Trace().Msg("skip subtitle")
+	case strings.HasPrefix(fn, "."):
+		log.Trace().Msg("skip hidden")
 		return
 	case util.BinarySearchContain(ignoredExts, ext):
 		log.Trace().Msg("skip uninterested")
 		return
-	case strings.HasPrefix(fn, "."):
-		log.Trace().Msg("skip hidden")
-		return
 	}
-
 	switch ext {
 	case ".zip":
 		err = archives.Unzip(ctx, f, cb)
@@ -280,9 +288,14 @@ func handle(ctx context.Context, st *scraper.Stat, f *util.File, t *torrenti.Tor
 	case ".7z":
 		err = archives.Un7z(ctx, f, cb)
 	case ".torrent":
-		err = index(ctx, f, t)
+		err = handleTorrent(ctx, f)
 	default:
-		err = errors.Errorf("unable to handle file: %q", f.Path)
+		switch {
+		case handlers.IsSubtitleExt(ext):
+			err = handleSubtitle(ctx, f)
+		default:
+			err = errors.Errorf("unable to handle file: %q", f.Path)
+		}
 	}
 	if err != nil {
 		log.Error().

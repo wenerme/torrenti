@@ -15,7 +15,7 @@ import (
 type Handler struct {
 	Name       string
 	Extensions []string
-	Handle     func(ctx context.Context, in *util.File, cb func(ctx context.Context, in *util.File) error) error
+	OnFile     func(ctx context.Context, in *util.File, cb func(ctx context.Context, in *util.File) error) error
 }
 
 func Ext(f *util.File) string {

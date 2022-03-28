@@ -8,12 +8,13 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	zlog "github.com/rs/zerolog/log"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
-func newDB(conf *DBCOnf) (*sql.DB, *gorm.DB, error) {
+func newDB(conf *DatabaseConf) (*sql.DB, *gorm.DB, error) {
 	var err error
 	var gdb *gorm.DB
 	var db *sql.DB
@@ -30,7 +31,7 @@ func newDB(conf *DBCOnf) (*sql.DB, *gorm.DB, error) {
 		dsn = u.String()
 		driver = "sqlite"
 
-		// log.Debug().Str("dsn", dsn).Str("driver", driver).Msg("use sqlite")
+		zlog.Debug().Str("dsn", dsn).Str("driver", driver).Msg("use sqlite")
 
 		db, err = sql.Open(driver, dsn)
 		if err != nil {
@@ -55,11 +56,11 @@ func newDB(conf *DBCOnf) (*sql.DB, *gorm.DB, error) {
 	return db, gdb, err
 }
 
-func newGLogger(conf *DBCOnf) logger.Interface {
+func newGLogger(conf *DatabaseConf) logger.Interface {
 	return logger.New(log.New(os.Stdout, "\r\n", log.LstdFlags), newGLoggerConf(conf))
 }
 
-func newGLoggerConf(conf *DBCOnf) logger.Config {
+func newGLoggerConf(conf *DatabaseConf) logger.Config {
 	lc := logger.Config{
 		SlowThreshold:             200 * time.Millisecond,
 		LogLevel:                  logger.Warn,

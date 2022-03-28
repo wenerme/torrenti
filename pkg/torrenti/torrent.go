@@ -25,7 +25,7 @@ func ParseTorrent(v string) (o *Torrent, err error) {
 	switch {
 	case fi != nil:
 		o.FileInfo = fi
-		o.File, err = filepath.Abs(v)
+		o.Path, err = filepath.Abs(v)
 	case strings.HasPrefix(v, "http:") || strings.HasPrefix(v, "https:"):
 		o.URL = v
 	case strings.HasPrefix(v, "magnet:"):
@@ -42,12 +42,14 @@ func ParseTorrent(v string) (o *Torrent, err error) {
 type Torrent struct {
 	Magnet   magnet.Magnet
 	Hash     magnet.Hash
-	File     string
+	Path     string
 	FileInfo fs.FileInfo
 	Data     []byte
 	Meta     *metainfo.MetaInfo
 	URL      string
 	Response *http.Response
+	File     *util.File
+	H        string
 }
 
 func (t *Torrent) Load() (err error) {
@@ -74,10 +76,10 @@ func (t *Torrent) Load() (err error) {
 			fi.Length = int64(len(t.Data))
 			t.FileInfo = fi
 		}
-	case t.File != "":
+	case t.Path != "":
 		var f *os.File
 
-		f, err = os.Open(t.File)
+		f, err = os.Open(t.Path)
 		if err == nil {
 			defer f.Close()
 			t.Data, err = io.ReadAll(f)

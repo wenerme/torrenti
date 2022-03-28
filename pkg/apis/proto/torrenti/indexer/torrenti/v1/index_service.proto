@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package indexer.torrenti.v1;
+
+import "google/api/annotations.proto";
+import "google/api/httpbody.proto";
+import "google/protobuf/timestamp.proto";
+import "indexer/common/file.proto";
+
+service TorrentIndexService {
+  rpc IndexTorrent(IndexTorrentRequest) returns (IndexTorrentResponse) {
+    option (google.api.http) = {
+      post: "/torrents/index"
+      body: "*"
+    };
+  }
+  rpc Stat(StatRequest) returns (StatResponse) {
+    option (google.api.http) = {
+      get: "/torrents/stat"
+    };
+  }
+}
+
+message StatRequest {}
+message StatResponse {
+  Stat stat = 1;
+}
+
+message Stat {
+  int64 meta_count = 1;
+  int64 meta_size = 5;
+  int64 torrent_count = 2;
+  int64 torrent_file_count = 3;
+  int64 torrent_file_total_size = 4;
+}
+
+message IndexTorrentRequest {
+  indexer.common.File file = 1;
+  string hash = 2;
+}
+
+message IndexTorrentResponse {
+  string hash = 1;
+}

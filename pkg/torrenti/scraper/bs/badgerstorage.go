@@ -5,7 +5,7 @@ import (
 	"net/url"
 
 	"github.com/dgraph-io/badger/v3"
-	"github.com/gocolly/colly/storage"
+	"github.com/gocolly/colly/v2/storage"
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 )

@@ -11,9 +11,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wenerme/torrenti/pkg/subi"
+
 	"github.com/caarlos0/env/v6"
 	"github.com/dustin/go-humanize"
-	"github.com/gocolly/colly"
+	"github.com/gocolly/colly/v2"
 	cli "github.com/urfave/cli/v2"
 	"github.com/wenerme/torrenti/pkg/torrenti/scraper"
 	"github.com/wenerme/torrenti/pkg/torrenti/util"
@@ -123,7 +125,39 @@ func printYaml(v interface{}) error {
 	return nil
 }
 
-var _conf = &Config{}
+var _conf = &Config{
+	DB: DatabaseConf{
+		Type: "sqlite",
+	},
+	Debug: DebugConf{
+		ListenConf: util.ListenConf{
+			Port: 9090,
+		},
+	},
+	Web: WebConf{
+		ListenConf: util.ListenConf{
+			Port: 18080,
+		},
+	},
+	GRPC: GRPCConf{
+		ListenConf: util.ListenConf{
+			Port: 18443,
+		},
+		Gateway: GRPCGateway{
+			Prefix: "/api",
+		},
+	},
+	Torrent: TorrentConf{
+		DB: DatabaseConf{
+			Type: "sqlite",
+		},
+	},
+	Sub: SubConf{
+		DB: DatabaseConf{
+			Type: "sqlite",
+		},
+	},
+}
 
 func setup(ctx *cli.Context) error {
 	conf := _conf
@@ -225,7 +259,7 @@ func scrapeTorrent(cc *cli.Context) error {
 	{
 		dirs := _conf.DirConf
 
-		dc := &DBCOnf{
+		dc := &DatabaseConf{
 			Type:     "sqlite",
 			Database: filepath.Join(dirs.CacheDir, "scraper-store.db"),
 		}
@@ -240,7 +274,8 @@ func scrapeTorrent(cc *cli.Context) error {
 		}
 	}
 	ctx := context.Background()
-	ctx = torrenti.IndexerContextKey.WithValue(ctx, getIndexer())
+	ctx = torrenti.IndexerContextKey.WithValue(ctx, getTorrentIndexer())
+	ctx = subi.IndexerContextKey.WithValue(ctx, getSubIndexer())
 	ctx = util.DirConfContextKey.WithValue(ctx, &_conf.DirConf)
 	ctx = scraper.OptionContextKey.WithValue(ctx, opts)
 	ctx, err = scraper.InitContext(ctx)
@@ -264,7 +299,7 @@ func scrapeTorrent(cc *cli.Context) error {
 }
 
 func addTorrent(ctx *cli.Context) error {
-	idx := getIndexer()
+	idx := getTorrentIndexer()
 	for _, v := range ctx.Args().Slice() {
 		log.Info().Str("torrent", v).Msg("add torrent")
 		t, err := torrenti.ParseTorrent(v)
@@ -275,7 +310,7 @@ func addTorrent(ctx *cli.Context) error {
 		if err != nil {
 			return err
 		}
-		_, err = idx.IndexTorrent(t)
+		_, err = idx.IndexTorrent(ctx.Context, t)
 		if err != nil {
 			return err
 		}
@@ -284,14 +319,21 @@ func addTorrent(ctx *cli.Context) error {
 }
 
 var (
-	_indexer     *torrenti.Indexer
-	_indexerOnce = new(sync.Once)
-	_ctx         *cli.Context
+	_torrenti     *torrenti.Indexer
+	_torrentiOnce = new(sync.Once)
+	_subiOnce     = new(sync.Once)
+	_subi         *subi.Indexer
+	_ctx          *cli.Context
 )
 
-func getIndexer() *torrenti.Indexer {
-	_indexerOnce.Do(_initIndexer)
-	return _indexer
+func getTorrentIndexer() *torrenti.Indexer {
+	_torrentiOnce.Do(_initIndexer)
+	return _torrenti
+}
+
+func getSubIndexer() *subi.Indexer {
+	_subiOnce.Do(_initSubIndexer)
+	return _subi
 }
 
 func _initIndexer() {
@@ -299,7 +341,22 @@ func _initIndexer() {
 	db, gdb, err := newDB(&conf.DB)
 	_ = db
 
-	_indexer, err = torrenti.NewIndexer(torrenti.NewIndexerOptions{DB: gdb})
+	_torrenti, err = torrenti.NewIndexer(torrenti.NewIndexerOptions{DB: gdb})
+	if err != nil {
+		panic(err)
+	}
+}
+
+func _initSubIndexer() {
+	conf := _conf
+	dc := &DatabaseConf{
+		Type:     "sqlite",
+		Database: filepath.Join(conf.DataDir, "subi.sqlite"),
+	}
+	db, gdb, err := newDB(dc)
+	_ = db
+
+	_subi, err = subi.NewIndexer(subi.NewIndexerOptions{DB: gdb})
 	if err != nil {
 		panic(err)
 	}
@@ -307,36 +364,52 @@ func _initIndexer() {
 
 type Config struct {
 	util.DirConf `yaml:",inline"`
-	PluginDir    string  `env:"PLUGIN_DIR"`
-	DB           DBCOnf  `envPrefix:"DB_"`
-	Log          LogConf `envPrefix:"LOG_"`
+	PluginDir    string       `env:"PLUGIN_DIR"`
+	DB           DatabaseConf `envPrefix:"DB_"`
+	Log          LogConf      `envPrefix:"LOG_"`
+	GRPC         GRPCConf     `envPrefix:"GRPC_"`
+	Web          WebConf      `envPrefix:"WEB_"`
+	Debug        DebugConf    `envPrefix:"DEBUG_"`
+
+	Torrent TorrentConf `envPrefix:"TORRENT_"`
+	Sub     SubConf     `envPrefix:"SUB_"`
 }
 
-type DBCOnf struct {
-	Type     string     `env:"TYPE" envDefault:"sqlite"`
+type DatabaseConf struct {
+	Type     string     `env:"TYPE"`
 	Driver   string     `env:"DRIVER"`
 	Database string     `env:"DATABASE"`
-	Username string     `env:"USERNAME" envDefault:"torrenti"`
-	Password string     `env:"PASSWORD" envDefault:"torrenti"`
+	Username string     `env:"USERNAME"`
+	Password string     `env:"PASSWORD"`
+	Host     string     `env:"HOST"`
+	Port     string     `env:"PORT"`
+	Schema   string     `env:"SCHEMA"`
 	DSN      string     `env:"DSN"`
 	Log      SQLLogConf `envPrefix:"LOG_"`
+
+	DriverOptions DatabaseDriverOptions `envPrefix:"DRIVER_"`
+	Attributes    map[string]string     `envPrefix:"ATTR_"` // ConnectionAttributes
+}
+
+type DatabaseDriverOptions struct {
+	MaxIdleConnections int            `env:"MAX_IDLE_CONNS"  envDefault:"20"`
+	MaxOpenConnections int            `env:"MAX_OPEN_CONNS"  envDefault:"100"`
+	ConnMaxIdleTime    time.Duration  `env:"MAX_IDLE_TIME"  envDefault:"10m"`
+	ConnMaxLifetime    *time.Duration `env:"MAX_LIVE_TIME"`
 }
 
 type SQLLogConf struct {
 	SlowThreshold  time.Duration `env:"SLOW_THRESHOLD"`
 	IgnoreNotFound bool          `env:"IGNORE_NOT_FOUND"`
+	Debug          bool          `env:"DEBUG"`
 }
 
 type LogConf struct {
 	Level string `env:"LEVEL" envDefault:"info"`
 }
 
-func runServer(ctx *cli.Context) error {
-	return nil
-}
-
 func showStat(ctx *cli.Context) error {
-	idx := getIndexer()
+	idx := getTorrentIndexer()
 	db := idx.DB
 	st := &stat{}
 	err := multierr.Combine(
@@ -379,4 +452,29 @@ type stat struct {
 	MaxTorrentName       string
 	TorrentTotalFileSize int64
 	FileCount            int64
+}
+
+type GRPCConf struct {
+	util.ListenConf `yaml:",inline"`
+	Enabled         bool        `env:"ENABLED" envDefault:"true"`
+	Gateway         GRPCGateway `envPrefix:"GATEWAY_"`
+}
+type GRPCGateway struct {
+	util.ListenConf `yaml:",inline"`
+	Enabled         bool   `env:"ENABLED" envDefault:"true"`
+	Prefix          string `env:"PREFIX"`
+}
+
+type WebConf struct {
+	util.ListenConf `yaml:",inline"`
+}
+type DebugConf struct {
+	util.ListenConf `yaml:",inline"`
+	Enabled         bool `env:"ENABLED" envDefault:"true"`
+}
+type TorrentConf struct {
+	DB DatabaseConf `envPrefix:"DB_"`
+}
+type SubConf struct {
+	DB DatabaseConf `envPrefix:"DB_"`
 }

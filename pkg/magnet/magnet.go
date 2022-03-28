@@ -3,7 +3,6 @@ package magnet
 import (
 	"encoding/base32"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"net/url"
 	"strings"
@@ -25,6 +24,12 @@ func (ih Hash) String() string {
 		return urnBtihPrefix + hex.EncodeToString(ih.Digest)
 	}
 	return urnBtmhPrefix + hex.EncodeToString(ih.Digest)
+}
+
+func (ih Hash) Magent() Magnet {
+	return Magnet{
+		Hash: ih,
+	}
 }
 
 func (ih Hash) HexHash() string {
@@ -86,7 +91,7 @@ func Parse(uri string) (m Magnet, err error) {
 
 	q := u.Query()
 	xt := q.Get("xt")
-	if m.Hash, err = parseHash(q.Get("xt")); err != nil {
+	if m.Hash, err = ParseHash(q.Get("xt")); err != nil {
 		err = fmt.Errorf("error parsing infohash %q: %s", xt, err)
 		return
 	}
@@ -109,12 +114,31 @@ func Parse(uri string) (m Magnet, err error) {
 	return
 }
 
-func ParseHash(encoded string) (ih Hash, err error) {
-	return ParseInfoHash(encoded)
-}
-
-func ParseInfoHash(encoded string) (ih Hash, err error) {
+func ParseHash(raw string) (ih Hash, err error) {
 	var n int
+	encoded := raw
+	switch {
+	case strings.HasPrefix(encoded, urnBtihPrefix):
+		encoded = encoded[len(urnBtihPrefix):]
+	case strings.HasPrefix(encoded, urnBtmhPrefix):
+		encoded = encoded[len(urnBtmhPrefix):]
+		var mh *multihash.DecodedMultihash
+		ih.Digest, err = hex.DecodeString(encoded)
+		if err != nil {
+			err = fmt.Errorf("error hex decoding hash: %s", err)
+			return
+		}
+
+		mh, err = multihash.Decode(ih.Digest)
+		if err != nil {
+			err = fmt.Errorf("error multihash decoding xt: %s", err)
+			return
+		}
+		ih.Name = mh.Name
+		ih.Digest = mh.Digest
+		return
+	}
+	// info hash
 	switch len(encoded) {
 	case 40:
 		ih.Digest = make([]byte, 20)
@@ -130,33 +154,6 @@ func ParseInfoHash(encoded string) (ih Hash, err error) {
 		err = fmt.Errorf("error decoding xt: %s", err)
 	} else if n != 20 {
 		err = fmt.Errorf("invalid length '%d' of the decoded bytes", n)
-	}
-	return
-}
-
-func parseHash(xt string) (ih Hash, err error) {
-	if strings.HasPrefix(xt, urnBtihPrefix) {
-		return ParseInfoHash(xt[len(urnBtihPrefix):])
-	} else if strings.HasPrefix(xt, urnBtmhPrefix) {
-		var raw []byte
-		var mh *multihash.DecodedMultihash
-
-		encoded := xt[len(urnBtmhPrefix):]
-		raw, err = hex.DecodeString(encoded)
-		if err != nil {
-			err = fmt.Errorf("error hex decoding xt: %s", err)
-			return
-		}
-
-		mh, err = multihash.Decode(raw)
-		if err != nil {
-			err = fmt.Errorf("error multihash decoding xt: %s", err)
-			return
-		}
-		ih.Name = mh.Name
-		ih.Digest = mh.Digest
-	} else {
-		err = errors.New("bad xt parameter prefix")
 	}
 	return
 }

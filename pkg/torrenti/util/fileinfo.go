@@ -4,12 +4,18 @@ import (
 	"bytes"
 	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/pkg/errors"
 )
 
-var _ fs.FileInfo = File{}
+var (
+	_ fs.FileInfo = &File{}
+	_ fs.File     = &File{}
+)
 
 type File struct {
 	Path     string
@@ -18,9 +24,51 @@ type File struct {
 	Modified time.Time
 	Internal any
 	Data     []byte
+
+	URL      string // file source url
+	Response *http.Response
+	Reader   io.ReadCloser
 }
 
-func (f File) ReadAll() ([]byte, error) {
+func (f *File) Stat() (fs.FileInfo, error) {
+	return f, nil
+}
+
+func (f *File) Read(i []byte) (int, error) {
+	if f.Reader != nil {
+		return f.Reader.Read(i)
+	}
+	return 0, io.EOF
+}
+
+func (f *File) Close() error {
+	if f.Reader != nil {
+		defer func() {
+			f.Reader = nil
+		}()
+		return f.Reader.Close()
+	}
+	return nil
+}
+
+func (f File) ReadAll() (data []byte, err error) {
+	if f.Data != nil {
+		return f.Data, nil
+	}
+	if _, err = os.Stat(f.Path); err == nil {
+		f.Data, err = os.ReadFile(f.Path)
+		err = errors.Wrapf(err, "os.ReadFile: %v", f.Path)
+	} else if f.URL != "" {
+		f.Response, err = http.Get(f.URL)
+		err = errors.Wrapf(err, "http.Get: %v", f.URL)
+		if err == nil {
+			defer f.Response.Body.Close()
+			f.Data, err = io.ReadAll(f.Response.Body)
+			err = errors.Wrapf(err, "io.ReadAll http response: %v", f.URL)
+		}
+	} else {
+		err = errors.New("unable to load file")
+	}
 	return f.Data, nil
 }
 

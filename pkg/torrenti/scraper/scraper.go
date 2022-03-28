@@ -4,9 +4,9 @@ import (
 	"context"
 	"net/url"
 
-	"github.com/wenerme/torrenti/pkg/torrenti/util"
+	"github.com/gocolly/colly/v2"
 
-	"github.com/gocolly/colly"
+	"github.com/wenerme/torrenti/pkg/torrenti/util"
 )
 
 type ScrapeOptions struct {

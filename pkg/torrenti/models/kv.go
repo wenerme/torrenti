@@ -3,6 +3,8 @@ package models
 import (
 	"encoding/json"
 
+	"gorm.io/gorm/clause"
+
 	"gorm.io/datatypes"
 )
 
@@ -13,6 +15,10 @@ type KV struct {
 	Value      string
 	Data       datatypes.JSON
 	Attributes datatypes.JSON
+}
+
+func (KV) ConflictColumns() []clause.Column {
+	return []clause.Column{{Name: "type"}, {Name: "key"}}
 }
 
 func (kv *KV) SetData(v interface{}) (err error) {

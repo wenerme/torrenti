@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package indexer.common;
+
+import "google/protobuf/timestamp.proto";
+
+message File {
+  optional string path = 1;
+  optional int64 length = 2;
+  optional int64 file_mode = 3;
+  optional google.protobuf.Timestamp modified = 4;
+  optional bytes data = 5;
+
+  optional string url = 6;
+}

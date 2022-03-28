@@ -2,11 +2,14 @@ package torrenti
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
+	"context"
 	"encoding/json"
 	"path/filepath"
 	"strings"
+
+	"go.uber.org/multierr"
+
+	"github.com/wenerme/torrenti/pkg/torrenti/util"
 
 	"github.com/dustin/go-humanize"
 	"github.com/rs/zerolog/log"
@@ -43,21 +46,39 @@ func NewIndexer(o NewIndexerOptions) (*Indexer, error) {
 	return idx, nil
 }
 
-type IndexTorrentResult struct {
+type IndexTorrentStat struct {
 	MetaCount            int64
+	MetaSize             int64
 	TorrentCount         int64
 	TorrentFileCount     int64
 	TorrentFileTotalSize int64
 }
 
 type IndexTorrentOptions struct {
-	Stat  *IndexTorrentResult
+	Stat  *IndexTorrentStat
 	Force bool //  if already exists, force to re-index
 }
+type IndexTorrentRequest struct {
+	File *util.File
+	Hash string
+}
 
-func (idx *Indexer) IndexTorrent(t *Torrent, opts ...func(o *IndexTorrentOptions)) (stat *IndexTorrentResult, err error) {
+func (idx *Indexer) Stat(ctx context.Context) (stat *IndexTorrentStat, err error) {
+	db := idx.DB
+	stat = &IndexTorrentStat{}
+	err = multierr.Combine(
+		db.Model(models.MetaFile{}).Count(&stat.MetaCount).Error,
+		db.Model(models.MetaFile{}).Select("sum(size)").Scan(&stat.MetaSize).Error,
+		db.Model(models.Torrent{}).Count(&stat.TorrentCount).Error,
+		db.Model(models.TorrentFile{}).Count(&stat.TorrentFileCount).Error,
+		db.Model(models.Torrent{}).Select("sum(total_file_size)").Scan(&stat.TorrentFileTotalSize).Error,
+	)
+	return
+}
+
+func (idx *Indexer) IndexTorrent(ctx context.Context, t *Torrent, opts ...func(o *IndexTorrentOptions)) (stat *IndexTorrentStat, err error) {
 	o := &IndexTorrentOptions{
-		Stat: &IndexTorrentResult{},
+		Stat: &IndexTorrentStat{},
 	}
 	for _, f := range opts {
 		f(o)
@@ -75,7 +96,7 @@ func (idx *Indexer) IndexTorrent(t *Torrent, opts ...func(o *IndexTorrentOptions
 
 	mf := models.MetaFile{
 		Filename:     t.FileInfo.Name(),
-		ContentHash:  contentHash(t.Data),
+		ContentHash:  util.ContentHashBytes(t.Data),
 		TorrentHash:  t.Hash.String(),
 		CreatedBy:    mi.CreatedBy,
 		CreationDate: mi.CreationDate,
@@ -100,7 +121,7 @@ func (idx *Indexer) IndexTorrent(t *Torrent, opts ...func(o *IndexTorrentOptions
 	}
 	{
 		ret := idx.DB.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "content_hash"}},
+			Columns:   mf.ConflictColumns(),
 			DoNothing: true,
 		}).Create(&mf)
 		if err = errors.Wrap(ret.Error, "save meta"); err != nil {
@@ -132,7 +153,7 @@ func (idx *Indexer) IndexTorrent(t *Torrent, opts ...func(o *IndexTorrentOptions
 	}
 	{
 		ret := idx.DB.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "hash"}},
+			Columns:   tt.ConflictColumns(),
 			DoNothing: true,
 		}).Create(&tt)
 		if err = errors.Wrap(ret.Error, "save torrent"); err != nil {
@@ -164,7 +185,7 @@ func (idx *Indexer) IndexTorrent(t *Torrent, opts ...func(o *IndexTorrentOptions
 		tf.Ext = filepath.Ext(tf.Path)
 
 		ret := idx.DB.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "torrent_hash"}, {Name: "path"}},
+			Columns:   tf.ConflictColumns(),
 			DoNothing: true,
 		}).Create(&tf)
 		if err = errors.Wrap(ret.Error, "save torrent file"); err != nil {
@@ -178,11 +199,6 @@ func (idx *Indexer) IndexTorrent(t *Torrent, opts ...func(o *IndexTorrentOptions
 	}
 
 	return
-}
-
-func contentHash(v []byte) string {
-	sum := sha256.Sum256(v)
-	return hex.EncodeToString(sum[:])
 }
 
 func nilString(v string) *string {
