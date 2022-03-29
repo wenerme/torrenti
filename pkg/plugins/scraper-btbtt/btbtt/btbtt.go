@@ -10,56 +10,51 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wenerme/torrenti/pkg/scrape"
+	"github.com/wenerme/torrenti/pkg/scrape/handlers"
+	"github.com/wenerme/torrenti/pkg/scrape/handlers/archives"
+
 	"github.com/gocolly/colly/v2"
 
 	"github.com/wenerme/torrenti/pkg/subi"
 
 	"github.com/rs/zerolog"
 
-	"gorm.io/gorm"
-
 	"golang.org/x/exp/slices"
-
-	"github.com/wenerme/torrenti/pkg/torrenti/scraper/handlers"
-	"github.com/wenerme/torrenti/pkg/torrenti/scraper/handlers/archives"
 
 	"github.com/pkg/errors"
 
 	"github.com/rs/zerolog/log"
 	"github.com/wenerme/torrenti/pkg/torrenti"
-	"github.com/wenerme/torrenti/pkg/torrenti/scraper"
 	"github.com/wenerme/torrenti/pkg/torrenti/util"
 )
 
 type VisitOptions struct {
-	URL    string
-	Source string
-	Reason string
-}
-
-type ScrapeContext struct {
-	Store *gorm.DB
+	URL     string
+	Source  string
+	Reason  string
+	Request *colly.Request
 }
 
 const KeySkipMarkVisit = "SkipMarkVisit"
 
 func init() {
 	Name := "btbtt"
-	scraper.RegisterScraper(&scraper.Scraper{
+	scrape.RegisterScraper(&scrape.Scraper{
 		Name: Name,
-		Support: func(ctx context.Context) bool {
-			return scraper.OptionContextKey.Must(ctx).Seed.Hostname() == "www.btbtt12.com"
+		Support: func(ctx *scrape.Context) bool {
+			return ctx.Seed.Hostname() == "www.btbtt12.com"
 		},
-		InitCollector: func(ctx context.Context, c *colly.Collector) error {
+		InitCollector: func(ctx *scrape.Context, c *colly.Collector) error {
 			c.SetRequestTimeout(30 * time.Second)
 			// 20MB
 			c.MaxBodySize = 20 * 1024 * 1024
 			c.AllowedDomains = []string{"www.btbtt12.com"}
 			return nil
 		},
-		SetupCollector: func(ctx context.Context, c *colly.Collector) error {
-			so := scraper.OptionContextKey.Must(ctx)
-			st := &scraper.Stat{}
+		SetupCollector: func(sc *scrape.Context, c *colly.Collector) error {
+			ctx := sc.Context
+			st := sc.Stat
 
 			lastReport := time.Now()
 			report := func(log zerolog.Logger) {
@@ -70,7 +65,7 @@ func init() {
 			}
 			fatal := func(log zerolog.Logger, msg string) {
 				st.ErrorCount++
-				if so.Fatal {
+				if sc.Fatal {
 					report(log)
 					log.Fatal().Msg(msg)
 				} else {
@@ -78,41 +73,35 @@ func init() {
 				}
 			}
 
-			store := so.Store
-			vis := func(o VisitOptions) {
-				log := log.With().Str("href", o.URL).Str("src", o.Source).Str("reason", o.Reason).Logger()
-				if o.URL == "" {
-					log.Warn().Msg("empty url")
-					return
-				}
+			vis := func(o scrape.QueueVisitOptions) {
+				var err error
 
-				visited, err := store.IsScraped(o.URL)
+				err = sc.QueueVisit(o)
 				if err != nil {
-					log.Err(err).Msg("query visit")
-				}
-				if visited {
-					st.SkipVisitCount++
-					log.Debug().Msg("duplicate visit")
+					fatal(log.With().Err(err).Logger(), "queue visit")
 					return
 				}
 
-				log.Debug().Msg("visit")
-
-				if err = c.Visit(o.URL); err != nil {
-					if colly.ErrAlreadyVisited == err {
-						st.AlreadyVisitCount++
-						return
-					}
-
-					fatal(log.With().Err(err).Logger(), "visit")
-				}
+				//if o.Request != nil {
+				//	err = o.Request.Visit(o.URL)
+				//} else {
+				//	err = c.Visit(o.URL)
+				//}
+				//if err != nil {
+				//	if colly.ErrAlreadyVisited == err {
+				//		st.AlreadyVisitCount++
+				//		return
+				//	}
+				//
+				//	fatal(log.With().Err(err).Logger(), "visit")
+				//}
 			}
 
 			c.OnScraped(func(resp *colly.Response) {
-				st.ScrapedCount++
 				u := resp.Request.URL.String()
-				now := time.Now()
 				log := log.With().Str("url", u).Logger()
+
+				now := time.Now()
 
 				defer func() {
 					if (st.ScrapedCount%1000 == 0 && now.Sub(lastReport) > (time.Second*10)) || now.Sub(lastReport) > (time.Second*30) {
@@ -120,19 +109,6 @@ func init() {
 						report(log)
 					}
 				}()
-				st.LastScrapedAt = now
-
-				if v, _ := resp.Ctx.GetAny(KeySkipMarkVisit).(bool); v == true {
-					st.SkipMarkVisitCount++
-					log.Trace().Msg("skip mark visit")
-					return
-				}
-
-				if err := store.MarkScraped(u); err != nil {
-					log.Err(err).Msg("mark visit")
-				} else {
-					log.Trace().Msg("mark visit")
-				}
 			})
 
 			c.OnHTML("a[href]", func(e *colly.HTMLElement) {
@@ -144,8 +120,12 @@ func init() {
 				}
 
 				visit := func(url string, res string) {
-					url = e.Request.AbsoluteURL(url)
-					vis(VisitOptions{URL: url, Source: src, Reason: "link"})
+					vis(scrape.QueueVisitOptions{
+						URL:    url,
+						Source: src,
+						Reason: res,
+						Origin: e.Request,
+					})
 				}
 				switch {
 				case target == nil:
@@ -175,15 +155,6 @@ func init() {
 				}
 			})
 
-			c.OnRequest(func(r *colly.Request) {
-				st.RequestCount++
-				u := r.URL.String()
-				if err := store.MarkVisiting(u); err != nil {
-					log.Err(err).Str("url", u).Msg("mark visiting")
-				}
-				log.Debug().Str("url", u).Msg("visiting")
-			})
-
 			c.OnResponse(func(resp *colly.Response) {
 				if hdr := resp.Headers.Get("Content-Disposition"); hdr != "" {
 					resp.Ctx.Put(KeySkipMarkVisit, true)
@@ -193,7 +164,7 @@ func init() {
 
 					filename := params["filename"]
 
-					log := log.With().Str("url", resp.Request.URL.String()).Str("file", filename).Logger()
+					log := log.With().Int("depth", resp.Request.Depth).Str("url", resp.Request.URL.String()).Str("file", filename).Logger()
 					log.Debug().
 						Int("file_count", st.FileCount).
 						Msg("detect")
@@ -257,7 +228,7 @@ func init() {
 	slices.Sort(ignoredExts)
 }
 
-func handle(ctx context.Context, st *scraper.Stat, f *util.File) (err error) {
+func handle(ctx context.Context, st *scrape.Stat, f *util.File) (err error) {
 	if f.IsDir() {
 		return nil
 	}

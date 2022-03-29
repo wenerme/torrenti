@@ -387,6 +387,7 @@ var (
 		(*common.File)(nil),          // 5: indexer.common.File
 	}
 )
+
 var file_indexer_torrenti_v1_index_service_proto_depIdxs = []int32{
 	2, // 0: indexer.torrenti.v1.StatResponse.stat:type_name -> indexer.torrenti.v1.Stat
 	5, // 1: indexer.torrenti.v1.IndexTorrentRequest.file:type_name -> indexer.common.File

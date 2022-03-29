@@ -1,10 +1,8 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"io/ioutil"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,9 +13,7 @@ import (
 
 	"github.com/caarlos0/env/v6"
 	"github.com/dustin/go-humanize"
-	"github.com/gocolly/colly/v2"
 	cli "github.com/urfave/cli/v2"
-	"github.com/wenerme/torrenti/pkg/torrenti/scraper"
 	"github.com/wenerme/torrenti/pkg/torrenti/util"
 	"gopkg.in/yaml.v3"
 
@@ -80,11 +76,19 @@ func main() {
 			{
 				Name:   "scrape",
 				Usage:  "scrape web pages",
-				Action: scrapeTorrent,
+				Action: runScrape,
 				Flags: []cli.Flag{
 					&cli.BoolFlag{
 						Name:  "fatal",
 						Usage: "stop when error occurs",
+					},
+					&cli.BoolFlag{
+						Name:  "seed",
+						Usage: "only scrape given url",
+					},
+					&cli.BoolFlag{
+						Name:  "queue",
+						Usage: "scrape pending queued url, not seed",
 					},
 				},
 			},
@@ -238,66 +242,6 @@ func setup(ctx *cli.Context) error {
 	return err
 }
 
-func scrapeTorrent(cc *cli.Context) error {
-	cache := filepath.Join(_conf.CacheDir, "web")
-	if err := os.MkdirAll(cache, 0o755); err != nil {
-		log.Fatal().Err(err).Msg("make cache dir")
-	}
-	log.Debug().Str("cache_dir", cache).Msg("cache dir")
-	if cc.NArg() != 1 {
-		log.Fatal().Msgf("must scrap only one url got %v", cc.NArg())
-	}
-	first := cc.Args().First()
-	u, err := url.Parse(first)
-	if err != nil {
-		log.Fatal().Err(err).Msg("invalid url")
-	}
-	opts := &scraper.ScrapeOptions{
-		Seed:  u,
-		Fatal: cc.Bool("fatal"),
-	}
-	{
-		dirs := _conf.DirConf
-
-		dc := &DatabaseConf{
-			Type:     "sqlite",
-			Database: filepath.Join(dirs.CacheDir, "scraper-store.db"),
-		}
-		opts.Store = &scraper.Store{}
-		_, opts.Store.DB, err = newDB(dc)
-		if err != nil {
-			return err
-		}
-		err = opts.Store.DB.AutoMigrate(&models.KV{})
-		if err != nil {
-			return err
-		}
-	}
-	ctx := context.Background()
-	ctx = torrenti.IndexerContextKey.WithValue(ctx, getTorrentIndexer())
-	ctx = subi.IndexerContextKey.WithValue(ctx, getSubIndexer())
-	ctx = util.DirConfContextKey.WithValue(ctx, &_conf.DirConf)
-	ctx = scraper.OptionContextKey.WithValue(ctx, opts)
-	ctx, err = scraper.InitContext(ctx)
-	if err != nil {
-		return err
-	}
-
-	c := colly.NewCollector(
-		colly.CacheDir(cache),
-	)
-
-	if err = scraper.InitCollector(ctx)(c); err != nil {
-		return err
-	}
-
-	if err = scraper.SetupCollector(ctx)(c); err != nil {
-		return err
-	}
-
-	return c.Visit(first)
-}
-
 func addTorrent(ctx *cli.Context) error {
 	idx := getTorrentIndexer()
 	for _, v := range ctx.Args().Slice() {
@@ -370,6 +314,7 @@ type Config struct {
 	GRPC         GRPCConf     `envPrefix:"GRPC_"`
 	Web          WebConf      `envPrefix:"WEB_"`
 	Debug        DebugConf    `envPrefix:"DEBUG_"`
+	Scrape       ScrapeConf   `envPrefix:"SCRAPE_"`
 
 	Torrent TorrentConf `envPrefix:"TORRENT_"`
 	Sub     SubConf     `envPrefix:"SUB_"`
@@ -477,4 +422,11 @@ type TorrentConf struct {
 }
 type SubConf struct {
 	DB DatabaseConf `envPrefix:"DB_"`
+}
+
+type ScrapeConf struct {
+	Debug ScrapeDebugConf `envPrefix:"DEBUG_"`
+}
+type ScrapeDebugConf struct {
+	Addr string `env:"ADDR" envDefault:"127.0.0.1:7676"`
 }

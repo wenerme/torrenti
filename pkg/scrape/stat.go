@@ -1,4 +1,4 @@
-package scraper
+package scrape
 
 import (
 	"time"
@@ -19,6 +19,14 @@ type Stat struct {
 	ExtensionCount     int
 }
 
+func (s *Stat) CountExt(ext string) {
+	s.ExtensionCount++
+	if s.Extensions == nil {
+		s.Extensions = make(map[string]int)
+	}
+	s.Extensions[ext]++
+}
+
 func (s *Stat) MarshalZerologObject(e *zerolog.Event) {
 	e.
 		Int("file", s.FileCount).
@@ -32,12 +40,4 @@ func (s *Stat) MarshalZerologObject(e *zerolog.Event) {
 	for k, v := range s.Extensions {
 		e.Int(k, v)
 	}
-}
-
-func (s *Stat) CountExt(ext string) {
-	s.ExtensionCount++
-	if s.Extensions == nil {
-		s.Extensions = make(map[string]int)
-	}
-	s.Extensions[ext]++
 }

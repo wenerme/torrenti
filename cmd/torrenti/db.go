@@ -36,8 +36,9 @@ func newDB(conf *DatabaseConf) (*sql.DB, *gorm.DB, error) {
 		db, err = sql.Open(driver, dsn)
 		if err != nil {
 			return nil, nil, err
-			// log.Fatal().Err(err).Send()
 		}
+		// sqlite
+		db.SetMaxOpenConns(1)
 
 		//if err = gdb.Exec("PRAGMA page_size = ?", 128*1024).Error; err != nil {
 		//	return err
