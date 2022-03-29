@@ -1,4 +1,4 @@
-package serves
+package serve
 
 import (
 	_ "expvar"

@@ -167,6 +167,7 @@ var (
 		(*timestamppb.Timestamp)(nil), // 1: google.protobuf.Timestamp
 	}
 )
+
 var file_indexer_common_file_proto_depIdxs = []int32{
 	1, // 0: indexer.common.File.modified:type_name -> google.protobuf.Timestamp
 	1, // [1:1] is the sub-list for method output_type

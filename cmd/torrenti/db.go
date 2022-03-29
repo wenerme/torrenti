@@ -23,10 +23,13 @@ func newDB(conf *DatabaseConf) (*sql.DB, *gorm.DB, error) {
 
 	switch conf.Type {
 	case "sqlite":
-		dbFile := conf.Database
+		dbFile := os.ExpandEnv(conf.Database)
 		u := url.URL{
 			Scheme: "file",
 			Path:   dbFile,
+		}
+		for k, v := range conf.Attributes {
+			u.Query().Add(k, v)
 		}
 		dsn = u.String()
 		driver = "sqlite"
@@ -36,8 +39,9 @@ func newDB(conf *DatabaseConf) (*sql.DB, *gorm.DB, error) {
 		db, err = sql.Open(driver, dsn)
 		if err != nil {
 			return nil, nil, err
-			// log.Fatal().Err(err).Send()
 		}
+		// sqlite
+		db.SetMaxOpenConns(1)
 
 		//if err = gdb.Exec("PRAGMA page_size = ?", 128*1024).Error; err != nil {
 		//	return err

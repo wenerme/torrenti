@@ -1,4 +1,4 @@
-package torrenti
+package plugin
 
 import (
 	"plugin"
@@ -11,5 +11,6 @@ type LoadPluginOptions struct {
 }
 
 func LoadPlugins(o LoadPluginOptions) error {
-	return _LoadPlugins(o)
+	// prefer hcp plugin system
+	return nil
 }

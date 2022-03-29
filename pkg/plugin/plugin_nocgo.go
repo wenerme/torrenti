@@ -1,6 +1,6 @@
 //go:build !cgo
 
-package torrenti
+package plugin
 
 import "github.com/rs/zerolog/log"
 

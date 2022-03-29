@@ -1,6 +1,7 @@
-package scraper
+package scrape
 
 import (
+	"sync"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -17,6 +18,19 @@ type Stat struct {
 	LastScrapedAt      time.Time
 	Extensions         map[string]int
 	ExtensionCount     int
+
+	l sync.RWMutex
+}
+
+func (s *Stat) CountExt(ext string) {
+	s.ExtensionCount++
+
+	s.l.Lock()
+	defer s.l.Unlock()
+	if s.Extensions == nil {
+		s.Extensions = make(map[string]int)
+	}
+	s.Extensions[ext]++
 }
 
 func (s *Stat) MarshalZerologObject(e *zerolog.Event) {
@@ -29,15 +43,10 @@ func (s *Stat) MarshalZerologObject(e *zerolog.Event) {
 		Int("skip_mark", s.SkipMarkVisitCount).
 		Int("ext", s.ExtensionCount).
 		Int("err", s.ErrorCount)
+
+	s.l.RLock()
+	defer s.l.RUnlock()
 	for k, v := range s.Extensions {
 		e.Int(k, v)
 	}
-}
-
-func (s *Stat) CountExt(ext string) {
-	s.ExtensionCount++
-	if s.Extensions == nil {
-		s.Extensions = make(map[string]int)
-	}
-	s.Extensions[ext]++
 }
