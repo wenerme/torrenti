@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -38,7 +39,27 @@ type VisitOptions struct {
 
 const KeySkipMarkVisit = "SkipMarkVisit"
 
+var (
+	threadIndex = regexp.MustCompile(`^/thread-index-fid-(\d+)-tid-(\d+)(-page-(\d+))?.htm$`)
+	indexPage   = regexp.MustCompile(`^/index-index-page-(\d+).htm$`)
+	forumIndex  = regexp.MustCompile(`^/forum-index-fid-(\d+)(-page-(\d+))?.htm$`)
+)
+
+var fids = []string{
+	"950",  // 剧集
+	"951",  // 电影
+	"1183", // 高清电影
+	"953",  // 音乐
+	"981",  // 动漫
+	"1107", // 综艺
+	"1151", // 图书
+	"957",  // 美图
+	"1191", // 音轨字幕
+}
+
 func init() {
+	slices.Sort(fids)
+
 	Name := "btbtt"
 	scrape.RegisterScraper(&scrape.Scraper{
 		Name: Name,
@@ -63,38 +84,16 @@ func init() {
 					Object("stat", st).
 					Msg("report")
 			}
-			fatal := func(log zerolog.Logger, msg string) {
-				st.ErrorCount++
-				if sc.Fatal {
-					report(log)
-					log.Fatal().Msg(msg)
-				} else {
-					log.Error().Msg(msg)
-				}
-			}
 
 			vis := func(o scrape.QueueVisitOptions) {
 				var err error
 
 				err = sc.QueueVisit(o)
-				if err != nil {
-					fatal(log.With().Err(err).Logger(), "queue visit")
-					return
-				}
-
-				//if o.Request != nil {
-				//	err = o.Request.Visit(o.URL)
-				//} else {
-				//	err = c.Visit(o.URL)
-				//}
-				//if err != nil {
-				//	if colly.ErrAlreadyVisited == err {
-				//		st.AlreadyVisitCount++
-				//		return
-				//	}
-				//
-				//	fatal(log.With().Err(err).Logger(), "visit")
-				//}
+				sc.OnError(&scrape.OnErrorEvent{
+					Error:   err,
+					Request: o.Request,
+					Message: "queue visit",
+				})
 			}
 
 			c.OnScraped(func(resp *colly.Response) {
@@ -121,10 +120,10 @@ func init() {
 
 				visit := func(url string, res string) {
 					vis(scrape.QueueVisitOptions{
-						URL:    url,
-						Source: src,
-						Reason: res,
-						Origin: e.Request,
+						URL:     url,
+						Source:  src,
+						Reason:  res,
+						Referer: e.Request,
 					})
 				}
 				switch {
@@ -136,19 +135,25 @@ func init() {
 				}
 				return
 			VALID:
-
 				switch {
-				case strings.HasPrefix(src, "/") && strings.HasPrefix(to, "/index-index-page"):
+				case forumIndex.MatchString(to):
+					fid := forumIndex.FindStringSubmatch(to)[0]
+					if util.BinarySearchContain(fids, fid) {
+						visit(to, "forum index")
+					}
+				case strings.HasPrefix(src, "/") && indexPage.MatchString(to):
 					visit(to, "home pagination")
-				case strings.HasPrefix(src, "/") && strings.HasPrefix(to, "/thread-index-fid"):
+				case strings.HasPrefix(src, "/index-index-page") && indexPage.MatchString(to):
+					visit(to, "index pagination")
+				case strings.HasPrefix(src, "/") && threadIndex.MatchString(to):
 					visit(to, "home to thread")
-				case strings.HasPrefix(src, "/index-index-page") && strings.HasPrefix(to, "/thread-index-fid"):
+				case strings.HasPrefix(src, "/index-index-page") && threadIndex.MatchString(to):
 					visit(to, "list to thread")
-				case strings.HasPrefix(src, "/attach-dialog-fid") && strings.HasPrefix(to, "/attach-download-fid"):
+				case strings.HasPrefix(to, "/attach-download-fid"):
 					visit(to, "download file")
-				case strings.HasPrefix(src, "/thread-index-fid") && strings.HasPrefix(to, "/attach-dialog-fid"):
-					visit(to, "download page")
-				case strings.HasPrefix(src, "/thread-index-fid") && strings.HasPrefix(to, "/attach-dialog-fid"):
+				case strings.HasPrefix(to, "/attach-dialog-fid"):
+					visit(strings.ReplaceAll(to, "/attach-dialog-fid", "/attach-download-fid"), "download page")
+				case strings.HasPrefix(src, "/thread-index-fid") && threadIndex.MatchString(to):
 					visit(to, "xref")
 				default:
 					log.Trace().Str("href", to).Str("from", src).Msg("href")
@@ -176,14 +181,17 @@ func init() {
 					}
 					err := handle(ctx, st, fi)
 					if err != nil {
-						fatal(
-							log.With().
-								Err(err).
-								Str("ext", filepath.Ext(filename)).
-								Str("mime", http.DetectContentType(fi.Data)).
-								Logger(),
-							"handle",
-						)
+						sc.OnError(&scrape.OnErrorEvent{
+							Response: resp,
+							Error:    err,
+							Message:  "handle",
+							Log: func(log zerolog.Context) zerolog.Context {
+								return log.
+									Str("file", filename).
+									Str("ext", filepath.Ext(filename)).
+									Str("mime", http.DetectContentType(fi.Data))
+							},
+						})
 					}
 				}
 			})
@@ -232,6 +240,16 @@ func handle(ctx context.Context, st *scrape.Stat, f *util.File) (err error) {
 	if f.IsDir() {
 		return nil
 	}
+	defer func() {
+		r := recover()
+		if r == nil {
+			return
+		}
+		err, _ = r.(error)
+		if err == nil {
+			err = errors.Errorf("handle panic: %v", r)
+		}
+	}()
 	cb := func(ctx context.Context, file *util.File) error {
 		return handle(ctx, st, file)
 	}

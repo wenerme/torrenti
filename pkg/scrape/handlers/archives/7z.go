@@ -18,13 +18,14 @@ func Un7z(ctx context.Context, in *util.File, cb func(context.Context, *util.Fil
 		if fe.Mode().IsDir() {
 			continue
 		}
-		f := &util.File{
+
+		f := in.ArchiveEntry(&util.File{
 			Path:     fe.Name,
 			FileMode: fe.Mode(),
 			Modified: fe.Modified,
 			Length:   int64(fe.UncompressedSize),
 			Internal: fe,
-		}
+		})
 		var rr io.ReadCloser
 		rr, err = fe.Open()
 		if err == nil {

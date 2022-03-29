@@ -3,11 +3,16 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/pkg/errors"
+	"github.com/wenerme/torrenti/pkg/scrape"
+	"gorm.io/gorm"
 
 	"github.com/wenerme/torrenti/pkg/plugin"
 
@@ -23,6 +28,7 @@ import (
 	"go.uber.org/multierr"
 
 	_ "github.com/glebarez/go-sqlite"
+	_ "github.com/jackc/pgx/v4"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/wenerme/torrenti/pkg/torrenti"
@@ -62,6 +68,10 @@ func main() {
 			{
 				Name:   "stat",
 				Action: showStat,
+			},
+			{
+				Name:   "migration",
+				Action: runMigration,
 			},
 			{
 				Name:   "serve",
@@ -132,9 +142,7 @@ func printYaml(v interface{}) error {
 }
 
 var _conf = &Config{
-	//DB: DatabaseConf{
-	//	Type: "sqlite",
-	//},
+	DB: DatabaseConf{},
 	Debug: DebugConf{
 		ListenConf: util.ListenConf{
 			Port: 9090,
@@ -149,26 +157,15 @@ var _conf = &Config{
 		ListenConf: util.ListenConf{
 			Port: 18443,
 		},
-		Gateway: GRPCGateway{
+		Gateway: GRPCGatewayConf{
 			Prefix: "/api",
 		},
 	},
 	Torrent: TorrentConf{
-		DB: DatabaseConf{
-			Type:     "sqlite",
-			Database: "$DATA_DIR/torrenti.sqlite",
-			Attributes: map[string]string{
-				"cache": "shared",
-			},
-		},
+		DB: DatabaseConf{},
 	},
 	Sub: SubConf{
-		DB: DatabaseConf{
-			Type: "sqlite",
-			Attributes: map[string]string{
-				"cache": "shared",
-			},
-		},
+		DB: DatabaseConf{},
 	},
 }
 
@@ -190,6 +187,12 @@ func setup(ctx *cli.Context) error {
 		if _, err := os.Stat(cfgFile); err != nil {
 			log.Debug().Str("path", cfgFile).Msg("default config file not found")
 			cfgFile = ""
+		}
+	}
+
+	if cfgFile == "" {
+		if _, err := os.Stat("./config.yaml"); err == nil {
+			cfgFile = "./config.yaml"
 		}
 	}
 
@@ -216,15 +219,9 @@ func setup(ctx *cli.Context) error {
 	if l, err := zerolog.ParseLevel(conf.Log.Level); err == nil {
 		log.Logger = log.Level(l)
 	}
-	if conf.PluginDir == "" {
-		self := os.Args[0]
-		conf.PluginDir = filepath.Join(filepath.Dir(self), "plugins")
 
-		if strings.Contains(self, "go-build") {
-			conf.PluginDir = "bin/plugins"
-		}
-	}
 	conf.InitDirConf(Name)
+	conf.defaults()
 
 	log.Debug().Str("config_dir", conf.ConfigDir).Msg("conf")
 	log.Debug().Str("data_dir", conf.DataDir).Msg("conf")
@@ -295,8 +292,10 @@ func getSubIndexer() *subi.Indexer {
 
 func _initIndexer() {
 	conf := _conf
-	db, gdb, err := newDB(&conf.Torrent.DB)
-	_ = db
+	_, gdb, err := newDB(&conf.Torrent.DB)
+	if err != nil {
+		panic(err)
+	}
 
 	_torrenti, err = torrenti.NewIndexer(torrenti.NewIndexerOptions{DB: gdb})
 	if err != nil {
@@ -306,12 +305,10 @@ func _initIndexer() {
 
 func _initSubIndexer() {
 	conf := _conf
-	dc := &DatabaseConf{
-		Type:     "sqlite",
-		Database: filepath.Join(conf.DataDir, "subi.sqlite"),
+	_, gdb, err := newDB(&conf.Sub.DB)
+	if err != nil {
+		log.Fatal().Err(err).Send()
 	}
-	db, gdb, err := newDB(dc)
-	_ = db
 
 	_subi, err = subi.NewIndexer(subi.NewIndexerOptions{DB: gdb})
 	if err != nil {
@@ -319,69 +316,30 @@ func _initSubIndexer() {
 	}
 }
 
-type Config struct {
-	util.DirConf `yaml:",inline"`
-	PluginDir    string `env:"PLUGIN_DIR"`
-	// DB           DatabaseConf `envPrefix:"DB_"`
-	Log    LogConf    `envPrefix:"LOG_"`
-	HTTP   HTTPConf   `envPrefix:"HTTP_"`
-	Debug  DebugConf  `envPrefix:"DEBUG_"`
-	GRPC   GRPCConf   `envPrefix:"GRPC_"`
-	Scrape ScrapeConf `envPrefix:"SCRAPE_"`
+func runMigration(ctx *cli.Context) (err error) {
+	getTorrentIndexer()
+	getSubIndexer()
 
-	Torrent TorrentConf `envPrefix:"TORRENT_"`
-	Sub     SubConf     `envPrefix:"SUB_"`
-}
-
-type DatabaseConf struct {
-	Type     string     `env:"TYPE"`
-	Driver   string     `env:"DRIVER"`
-	Database string     `env:"DATABASE"`
-	Username string     `env:"USERNAME"`
-	Password string     `env:"PASSWORD"`
-	Host     string     `env:"HOST"`
-	Port     string     `env:"PORT"`
-	Schema   string     `env:"SCHEMA"`
-	DSN      string     `env:"DSN"`
-	Log      SQLLogConf `envPrefix:"LOG_"`
-
-	DriverOptions DatabaseDriverOptions `envPrefix:"DRIVER_"`
-	Attributes    map[string]string     `envPrefix:"ATTR_"` // ConnectionAttributes
-}
-
-type DatabaseDriverOptions struct {
-	MaxIdleConnections int            `env:"MAX_IDLE_CONNS"  envDefault:"20"`
-	MaxOpenConnections int            `env:"MAX_OPEN_CONNS"  envDefault:"100"`
-	ConnMaxIdleTime    time.Duration  `env:"MAX_IDLE_TIME"  envDefault:"10m"`
-	ConnMaxLifetime    *time.Duration `env:"MAX_LIVE_TIME"`
-}
-
-type SQLLogConf struct {
-	SlowThreshold  time.Duration `env:"SLOW_THRESHOLD"`
-	IgnoreNotFound bool          `env:"IGNORE_NOT_FOUND"`
-	Debug          bool          `env:"DEBUG"`
-}
-
-type LogConf struct {
-	Level string `env:"LEVEL" envDefault:"info"`
+	var sdb *gorm.DB
+	_, sdb, err = newDB(&_conf.Scrape.Store.DB)
+	if err != nil {
+		return errors.Wrap(err, "new scraper store")
+	}
+	sc := &scrape.Context{
+		DB: sdb,
+	}
+	sc.Seed, _ = url.Parse("https://wener.me")
+	return sc.Init()
 }
 
 func showStat(ctx *cli.Context) error {
 	idx := getTorrentIndexer()
 	db := idx.DB
 	st := &stat{}
-	err := multierr.Combine(
-		db.Model(models.MetaFile{}).Count(&st.MetaCount).Error,
-		db.Model(models.MetaFile{}).Select("sum(size)").Scan(&st.MetaSize).Error,
-		db.Model(models.Torrent{}).Count(&st.TorrentCount).Error,
-		db.Model(models.TorrentFile{}).Count(&st.FileCount).Error,
-		db.Model(models.Torrent{}).Select("sum(total_file_size)").Scan(&st.TorrentTotalFileSize).Error,
-		db.Model(models.Torrent{}).Select("max(total_file_size)").Scan(&st.MaxTorrentSize).Error,
-	)
-	if err != nil {
-		return err
-	}
+	ts, err := idx.Stat(ctx.Context)
 	err = multierr.Combine(
+		err,
+		db.Model(models.Torrent{}).Select("coalesce(max(total_file_size),0)").Scan(&st.MaxTorrentSize).Error,
 		db.Model(models.Torrent{}).Where(models.Torrent{TotalFileSize: st.MaxTorrentSize}).Select("name").Scan(&st.MaxTorrentName).Error,
 	)
 	if err != nil {
@@ -389,13 +347,13 @@ func showStat(ctx *cli.Context) error {
 	}
 	return printYaml(map[string]interface{}{
 		"meta": map[string]interface{}{
-			"count":           st.MetaCount,
-			"total file size": humanize.Bytes(uint64(st.MetaSize)),
+			"count":           ts.MetaCount,
+			"total file size": humanize.Bytes(uint64(ts.MetaSize)),
 		},
 		"torrent": map[string]interface{}{
-			"count":            st.TorrentCount,
-			"total size":       humanize.Bytes(uint64(st.TorrentTotalFileSize)),
-			"files":            st.FileCount,
+			"count":            ts.TorrentCount,
+			"total size":       humanize.Bytes(uint64(ts.TorrentFileTotalSize)),
+			"files":            ts.TorrentFileCount,
 			"max torrent size": humanize.Bytes(uint64(st.MaxTorrentSize)),
 			"max torrent name": st.MaxTorrentName,
 		},
@@ -403,43 +361,6 @@ func showStat(ctx *cli.Context) error {
 }
 
 type stat struct {
-	MetaCount            int64
-	MetaSize             int64
-	TorrentCount         int64
-	MaxTorrentSize       int64
-	MaxTorrentName       string
-	TorrentTotalFileSize int64
-	FileCount            int64
-}
-
-type GRPCConf struct {
-	util.ListenConf `yaml:",inline"`
-	Enabled         bool        `env:"ENABLED" envDefault:"true"`
-	Gateway         GRPCGateway `envPrefix:"GATEWAY_"`
-}
-type GRPCGateway struct {
-	util.ListenConf `yaml:",inline"`
-	Enabled         bool   `env:"ENABLED" envDefault:"true"`
-	Prefix          string `env:"PREFIX"`
-}
-
-type HTTPConf struct {
-	util.ListenConf `yaml:",inline"`
-}
-type DebugConf struct {
-	util.ListenConf `yaml:",inline"`
-	Enabled         bool `env:"ENABLED" envDefault:"true"`
-}
-type TorrentConf struct {
-	DB DatabaseConf `envPrefix:"DB_"`
-}
-type SubConf struct {
-	DB DatabaseConf `envPrefix:"DB_"`
-}
-
-type ScrapeConf struct {
-	Debug ScrapeDebugConf `envPrefix:"DEBUG_"`
-}
-type ScrapeDebugConf struct {
-	Addr string `env:"ADDR" envDefault:"127.0.0.1:7676"`
+	MaxTorrentSize int64
+	MaxTorrentName string
 }

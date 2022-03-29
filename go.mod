@@ -14,6 +14,8 @@ require (
 	github.com/go-chi/chi/v5 v5.0.7
 	github.com/gocolly/colly/v2 v2.0.0-00010101000000-000000000000
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.10.0
+	github.com/jackc/pgx/v4 v4.15.0
+	github.com/mitchellh/mapstructure v1.1.2
 	github.com/multiformats/go-multihash v0.1.0
 	github.com/nwaples/rardecode/v2 v2.0.0-beta.2
 	github.com/oklog/run v1.1.0
@@ -32,6 +34,7 @@ require (
 	google.golang.org/protobuf v1.28.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 	gorm.io/datatypes v1.0.6
+	gorm.io/driver/postgres v1.3.1
 	gorm.io/driver/sqlite v1.3.1
 	gorm.io/gorm v1.23.3
 )
@@ -62,6 +65,13 @@ require (
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/hashicorp/errwrap v1.0.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
+	github.com/jackc/chunkreader/v2 v2.0.1 // indirect
+	github.com/jackc/pgconn v1.11.0 // indirect
+	github.com/jackc/pgio v1.0.0 // indirect
+	github.com/jackc/pgpassfile v1.0.0 // indirect
+	github.com/jackc/pgproto3/v2 v2.2.0 // indirect
+	github.com/jackc/pgservicefile v0.0.0-20200714003250-2b9c44734f2b // indirect
+	github.com/jackc/pgtype v1.10.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.4 // indirect
 	github.com/kennygrant/sanitize v1.2.4 // indirect

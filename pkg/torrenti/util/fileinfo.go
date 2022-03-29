@@ -25,9 +25,14 @@ type File struct {
 	Internal any
 	Data     []byte
 
-	URL      string // file source url
+	URL      string // file origin url
 	Response *http.Response
 	Reader   io.ReadCloser
+}
+
+func (f *File) ArchiveEntry(file *File) *File {
+	file.URL = f.URL
+	return file
 }
 
 func (f *File) Stat() (fs.FileInfo, error) {

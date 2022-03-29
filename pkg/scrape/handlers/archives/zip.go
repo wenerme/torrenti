@@ -33,13 +33,13 @@ func Unzip(ctx context.Context, in *util.File, cb func(context.Context, *util.Fi
 	gbk := simplifiedchinese.GBK.NewDecoder()
 
 	for _, fe := range zr.File {
-		fi := &util.File{
+		fi := in.ArchiveEntry(&util.File{
 			Path:     fe.Name,
 			FileMode: fe.Mode(),
 			Modified: fe.Modified,
 			Length:   int64(fe.UncompressedSize64),
 			Internal: fe,
-		}
+		})
 		if fe.NonUTF8 {
 			// gbk
 			fi.Path, err = gbk.String(fe.Name)

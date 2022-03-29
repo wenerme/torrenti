@@ -68,10 +68,10 @@ func (idx *Indexer) Stat(ctx context.Context) (stat *IndexTorrentStat, err error
 	stat = &IndexTorrentStat{}
 	err = multierr.Combine(
 		db.Model(models.MetaFile{}).Count(&stat.MetaCount).Error,
-		db.Model(models.MetaFile{}).Select("sum(size)").Scan(&stat.MetaSize).Error,
+		db.Model(models.MetaFile{}).Select("coalesce(sum(size),0)").Scan(&stat.MetaSize).Error,
 		db.Model(models.Torrent{}).Count(&stat.TorrentCount).Error,
 		db.Model(models.TorrentFile{}).Count(&stat.TorrentFileCount).Error,
-		db.Model(models.Torrent{}).Select("sum(total_file_size)").Scan(&stat.TorrentFileTotalSize).Error,
+		db.Model(models.Torrent{}).Select("coalesce(sum(total_file_size),0)").Scan(&stat.TorrentFileTotalSize).Error,
 	)
 	return
 }
@@ -113,7 +113,10 @@ func (idx *Indexer) IndexTorrent(ctx context.Context, t *Torrent, opts ...func(o
 	if err != nil {
 		return
 	}
+
 	delete(m, "info")
+	delete(m, "piece layers")
+
 	mf.Raw, err = json.Marshal(m)
 	err = errors.Wrap(err, "json.Marshal data")
 	if err != nil {

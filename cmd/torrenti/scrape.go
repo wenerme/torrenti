@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/gocolly/colly/v2/debug"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"go.uber.org/multierr"
 
 	"github.com/gocolly/colly/v2"
 	"github.com/pkg/errors"
@@ -20,6 +22,10 @@ import (
 )
 
 func runScrape(cc *cli.Context) error {
+	svc := newServeContext(cc)
+	ctx, cancel := context.WithCancel(svc.Context)
+	defer cancel()
+
 	cache := filepath.Join(_conf.CacheDir, "web")
 	if err := os.MkdirAll(cache, 0o755); err != nil {
 		log.Fatal().Err(err).Msg("make cache dir")
@@ -35,55 +41,44 @@ func runScrape(cc *cli.Context) error {
 	}
 	first = u.String()
 
-	var sdb *gorm.DB
-	{
-		dirs := _conf.DirConf
-
-		dc := &DatabaseConf{
-			Type:     "sqlite",
-			Database: filepath.Join(dirs.CacheDir, "scraper-store.db"),
-			Log: SQLLogConf{
-				IgnoreNotFound: true,
-			},
-			Attributes: map[string]string{
-				"cache": "shared",
-			},
-		}
-		_, sdb, err = newDB(dc)
-		if err != nil {
-			return errors.Wrap(err, "new scraper store")
-		}
-	}
-
-	sc := &scrape.Context{
-		Seed:  u,
-		Fatal: cc.Bool("fatal"),
-		DB:    sdb,
-	}
-
-	ctx := context.Background()
 	ctx = torrenti.IndexerContextKey.WithValue(ctx, getTorrentIndexer())
 	ctx = subi.IndexerContextKey.WithValue(ctx, getSubIndexer())
 	ctx = util.DirConfContextKey.WithValue(ctx, &_conf.DirConf)
-	ctx = scrape.ContextKey.WithValue(ctx, sc)
+	svc.Context = ctx
 
 	c := colly.NewCollector(
 		colly.CacheDir(cache),
-		colly.Debugger(&debug.WebDebugger{
-			Address: _conf.Scrape.Debug.Addr,
-		}),
+		//colly.Debugger(&debug.WebDebugger{
+		//	Address: _conf.Scrape.Debug.Addr,
+		//}),
 		colly.UserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.74 Safari/537.36"),
 	)
 
-	sc.Context = ctx
-	sc.C = c
+	var sdb *gorm.DB
+	_, sdb, err = newDB(&_conf.Scrape.Store.DB)
+	if err != nil {
+		return errors.Wrap(err, "new scraper store")
+	}
+	sc := &scrape.Context{
+		Seed:      u,
+		Fatal:     cc.Bool("fatal"),
+		DB:        sdb,
+		Context:   ctx,
+		Collector: c,
+	}
 
-	if err = sc.Init(); err != nil {
-		return errors.Wrap(err, "init scraper")
+	registerDebug(svc)
+	registerScrapeMetrics(sc)
+	err = multierr.Combine(
+		errors.Wrap(sc.Init(), "init scraper"),
+		serveDebug(svc),
+	)
+	if err != nil {
+		return err
 	}
 
 	if cc.Bool("seed") {
-		return sc.C.Visit(first)
+		return sc.Collector.Visit(first)
 	}
 
 	if !cc.Bool("pull") {
@@ -92,8 +87,64 @@ func runScrape(cc *cli.Context) error {
 		}
 	}
 
-	return sc.Queue.Run(c)
+	svc.G.Add(func() error {
+		return sc.Queue.Run(c)
+	}, func(err error) {
+		sc.Queue.Stop()
+	})
+
+	return svc.G.Run()
 }
 
-func serveScrape(sc *ServeContext) {
+func registerScrapeMetrics(sc *scrape.Context) {
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "scrape_queue_size",
+		Help: "Scrape queue size",
+	}, func() float64 {
+		size, err := sc.Queue.Size()
+		if err != nil {
+			log.Err(err).Msg("get scrape queue size")
+		}
+		return float64(size)
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "scrape_request_count",
+	}, func() float64 {
+		return float64(sc.Stat.RequestCount)
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "scrape_error_count",
+	}, func() float64 {
+		return float64(sc.Stat.ErrorCount)
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "scrape_file_count",
+	}, func() float64 {
+		return float64(sc.Stat.FileCount)
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "scrape_ext_total",
+	}, func() float64 {
+		return float64(sc.Stat.ExtensionCount)
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "scrape_cache_hit_count",
+	}, func() float64 {
+		return float64(colly.CacheHit)
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "scrape_cache_miss_count",
+	}, func() float64 {
+		return float64(colly.CacheMiss)
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "scrape_cache_skip_count",
+	}, func() float64 {
+		return float64(colly.CacheSkip)
+	})
+	promauto.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "scrape_cache_invalid_count",
+	}, func() float64 {
+		return float64(colly.CacheInvalid)
+	})
 }

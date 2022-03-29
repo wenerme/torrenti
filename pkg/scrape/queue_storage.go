@@ -16,6 +16,7 @@ var _ queue.Storage = (*QueueStorage)(nil)
 type QueueRequest struct {
 	models.Model
 	URL      string `gorm:"unique"`
+	Referer  string `gorm:"index"`
 	Depth    int
 	PulledAt *time.Time
 	Raw      []byte
@@ -31,10 +32,12 @@ func (q *QueueStorage) Init() error {
 
 func (q *QueueStorage) AddRequest(bytes []byte) error {
 	r := &QueueRequest{
-		URL:   gjson.GetBytes(bytes, "URL").String(),
-		Depth: int(gjson.GetBytes(bytes, "Depth").Int()),
-		Raw:   bytes,
+		URL:     gjson.GetBytes(bytes, "URL").String(),
+		Depth:   int(gjson.GetBytes(bytes, "Depth").Int()),
+		Referer: gjson.GetBytes(bytes, "Ctx._referer").String(),
+		Raw:     bytes,
 	}
+
 	log.Debug().Str("url", r.URL).Msg("add request")
 	return q.DB.
 		Clauses(clause.OnConflict{

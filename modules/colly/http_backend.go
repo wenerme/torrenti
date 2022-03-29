@@ -28,9 +28,17 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gobwas/glob"
+)
+
+var (
+	CacheHit     int64
+	CacheInvalid int64
+	CacheMiss    int64
+	CacheSkip    int64
 )
 
 type httpBackend struct {
@@ -130,6 +138,7 @@ func (h *httpBackend) GetMatchingRule(domain string) *LimitRule {
 
 func (h *httpBackend) Cache(request *http.Request, bodySize int, checkHeadersFunc checkHeadersFunc, cacheDir string) (*Response, error) {
 	if cacheDir == "" || request.Method != "GET" || request.Header.Get("Cache-Control") == "no-cache" {
+		atomic.AddInt64(&CacheSkip, 1)
 		return h.Do(request, bodySize, checkHeadersFunc)
 	}
 	sum := sha1.Sum([]byte(request.URL.String()))
@@ -142,9 +151,12 @@ func (h *httpBackend) Cache(request *http.Request, bodySize int, checkHeadersFun
 		file.Close()
 		checkHeadersFunc(request, resp.StatusCode, *resp.Headers)
 		if resp.StatusCode < 500 {
+			atomic.AddInt64(&CacheHit, 1)
 			return resp, err
 		}
+		atomic.AddInt64(&CacheInvalid, 1)
 	}
+	atomic.AddInt64(&CacheMiss, 1)
 	resp, err := h.Do(request, bodySize, checkHeadersFunc)
 	if err != nil || resp.StatusCode >= 500 {
 		return resp, err

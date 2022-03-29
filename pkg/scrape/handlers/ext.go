@@ -31,7 +31,7 @@ func Ext(f *util.File) string {
 		switch {
 		case ext != ".torrent" && isTorrent(f.Data):
 			neo = ".torrent"
-		case len(ext) == 1 || ext[0] != '.':
+		case len(ext) <= 1 || ext[0] != '.':
 			ext = ""
 		// case strings.Contains(".abcdefghijklmnopqrstuvwxyz", ext):
 		case !isValidExt(ext):

@@ -12,10 +12,11 @@ type VisitStore struct {
 
 type VisitRecord struct {
 	models.Model
-	URL      string `gorm:"type:unique"`
+	URL      string `gorm:"unique"`
 	Visiting bool
 	Scraped  bool
 	File     bool
+	Error    string
 }
 
 func (VisitRecord) ConflictColumns() []clause.Column {
@@ -28,10 +29,7 @@ func (s *VisitStore) Init() error {
 
 func (s *VisitStore) IsScraped(url string) (visited bool, err error) {
 	var record VisitRecord
-	err = s.DB.Where(VisitRecord{URL: url}).First(&record).Error
-	if err == gorm.ErrRecordNotFound {
-		err = nil
-	}
+	err = s.DB.Where(VisitRecord{URL: url}).Limit(1).Find(&record).Error
 	return record.Scraped, err
 }
 
@@ -40,7 +38,7 @@ func (s *VisitStore) MarkVisiting(u string) error {
 	conflict := clause.OnConflict{
 		Columns: vr.ConflictColumns(),
 		Where: clause.Where{Exprs: []clause.Expression{
-			clause.Neq{Column: clause.Column{Name: "visiting"}, Value: true},
+			clause.Neq{Column: clause.Column{Table: clause.CurrentTable, Name: "visiting"}, Value: true},
 		}},
 		DoUpdates: clause.AssignmentColumns([]string{"visiting", "updated_at"}),
 	}
@@ -52,7 +50,7 @@ func (s *VisitStore) MarkScraped(u string) error {
 	conflict := clause.OnConflict{
 		Columns: vr.ConflictColumns(),
 		Where: clause.Where{Exprs: []clause.Expression{
-			clause.Neq{Column: clause.Column{Name: "scraped"}, Value: true},
+			clause.Neq{Column: clause.Column{Table: clause.CurrentTable, Name: "scraped"}, Value: true},
 		}},
 		DoUpdates: clause.AssignmentColumns([]string{"scraped", "updated_at"}),
 	}
@@ -60,13 +58,25 @@ func (s *VisitStore) MarkScraped(u string) error {
 }
 
 func (s *VisitStore) MarkFile(u string) error {
-	vr := &VisitRecord{URL: u, Scraped: true}
+	vr := &VisitRecord{URL: u, File: true}
 	conflict := clause.OnConflict{
 		Columns: vr.ConflictColumns(),
 		Where: clause.Where{Exprs: []clause.Expression{
-			clause.Neq{Column: clause.Column{Name: "file"}, Value: true},
+			clause.Neq{Column: clause.Column{Table: clause.CurrentTable, Name: "file"}, Value: true},
 		}},
 		DoUpdates: clause.AssignmentColumns([]string{"file", "updated_at"}),
+	}
+	return s.DB.Clauses(conflict).Create(vr).Error
+}
+
+func (s *VisitStore) MarkError(u string, err error) error {
+	if err == nil {
+		return nil
+	}
+	vr := &VisitRecord{URL: u, Error: err.Error()}
+	conflict := clause.OnConflict{
+		Columns:   vr.ConflictColumns(),
+		DoUpdates: clause.AssignmentColumns([]string{"error", "updated_at"}),
 	}
 	return s.DB.Clauses(conflict).Create(vr).Error
 }

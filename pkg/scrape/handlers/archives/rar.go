@@ -26,13 +26,13 @@ func Unrar(ctx context.Context, in *util.File, cb func(context.Context, *util.Fi
 			return err
 		}
 
-		f := &util.File{
+		f := in.ArchiveEntry(&util.File{
 			Path:     next.Name,
 			Length:   next.UnPackedSize,
 			FileMode: next.Mode(),
 			Modified: next.ModificationTime,
 			Internal: next,
-		}
+		})
 		f.Data, err = io.ReadAll(r)
 		if err != nil {
 			return err
