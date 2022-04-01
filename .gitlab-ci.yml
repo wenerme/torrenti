@@ -1,0 +1,32 @@
+stages:
+  - build
+
+Build:
+  image: wener/go:docker
+  stage: build
+  services:
+    - docker:dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375/
+    DOCKER_DRIVER: overlay2
+    DOCKER_TLS_CERTDIR: ''
+  before_script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+  script:
+    - make build
+    - echo Building image "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG"
+    - docker build --pull -t "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG" .
+    - docker push "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG"
+
+.go:before: &go_before
+  - mkdir -p .cache
+  - export GOPATH="$PWD/.cache"
+  - export PATH="$PWD/.cache/bin:$PATH"
+#  - export GOPROXY=https://goproxy.io
+#  - export GOPROXY=https://mirrors.aliyun.com/goproxy/,direct
+
+default:
+  cache:
+    key: '$CI_COMMIT_REF_SLUG'
+    paths:
+      - .cache
