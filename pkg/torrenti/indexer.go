@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"go.uber.org/multierr"
@@ -103,7 +104,8 @@ func (idx *Indexer) IndexTorrent(ctx context.Context, t *Torrent, opts ...func(o
 		Comment:      mi.Comment,
 		Encoding:     mi.Encoding,
 		Size:         t.FileInfo.Size(),
-		SourceURL:    nilString(t.URL),
+		Announce:     mi.Announce,
+		Referer:      nilString(t.URL),
 		Raw:          nil,
 		RawBytes:     nil,
 	}
@@ -116,6 +118,13 @@ func (idx *Indexer) IndexTorrent(ctx context.Context, t *Torrent, opts ...func(o
 
 	delete(m, "info")
 	delete(m, "piece layers")
+
+	if v, ok := m["saved by"].(string); ok {
+		mf.CreatedBy = v
+	}
+	if _, ok := m["save date"]; ok {
+		mf.CreationDate = reflect.ValueOf(m["save date"]).Int()
+	}
 
 	mf.Raw, err = json.Marshal(m)
 	err = errors.Wrap(err, "json.Marshal data")

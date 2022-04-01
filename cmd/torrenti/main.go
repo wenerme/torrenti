@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/wenerme/torrenti/pkg/serve"
+
 	"github.com/pkg/errors"
 	"github.com/wenerme/torrenti/pkg/scrape"
 	"gorm.io/gorm"
@@ -142,30 +144,32 @@ func printYaml(v interface{}) error {
 }
 
 var _conf = &Config{
-	DB: DatabaseConf{},
-	Debug: DebugConf{
+	DB: serve.DatabaseConf{
+		GORM: serve.GORMConf{DisableForeignKeyConstraintWhenMigrating: true},
+	},
+	Debug: serve.DebugConf{
 		ListenConf: util.ListenConf{
 			Port: 9090,
 		},
 	},
-	HTTP: HTTPConf{
+	HTTP: serve.HTTPConf{
 		ListenConf: util.ListenConf{
 			Port: 18080,
 		},
 	},
-	GRPC: GRPCConf{
+	GRPC: serve.GRPCConf{
 		ListenConf: util.ListenConf{
 			Port: 18443,
 		},
-		Gateway: GRPCGatewayConf{
+		Gateway: serve.GRPCGatewayConf{
 			Prefix: "/api",
 		},
 	},
 	Torrent: TorrentConf{
-		DB: DatabaseConf{},
+		DB: serve.DatabaseConf{},
 	},
 	Sub: SubConf{
-		DB: DatabaseConf{},
+		DB: serve.DatabaseConf{},
 	},
 }
 

@@ -6,6 +6,22 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
+func UnixToTimestamp(t int64) *timestamppb.Timestamp {
+	if t == 0 {
+		return nil
+	}
+	return &timestamppb.Timestamp{
+		Seconds: t,
+	}
+}
+
+func UnixMilliToTimestamp(t int64) *timestamppb.Timestamp {
+	if t == 0 {
+		return nil
+	}
+	return ToTimestamp(time.UnixMilli(t))
+}
+
 func ToTimestamp(t time.Time) *timestamppb.Timestamp {
 	if t.IsZero() {
 		return nil

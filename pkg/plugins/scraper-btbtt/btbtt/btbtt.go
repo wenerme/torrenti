@@ -162,14 +162,19 @@ func init() {
 
 			c.OnResponse(func(resp *colly.Response) {
 				if hdr := resp.Headers.Get("Content-Disposition"); hdr != "" {
-					resp.Ctx.Put(KeySkipMarkVisit, true)
+					// resp.Ctx.Put(KeySkipMarkVisit, true)
 					st.FileCount++
 
+					u := resp.Request.URL.String()
 					_, params, _ := mime.ParseMediaType(hdr)
-
 					filename := params["filename"]
 
-					log := log.With().Int("depth", resp.Request.Depth).Str("url", resp.Request.URL.String()).Str("file", filename).Logger()
+					log := log.With().Int("depth", resp.Request.Depth).Str("url", u).Str("file", filename).Logger()
+
+					if err := sc.Store.MarkFile(u); err != nil {
+						log.Err(err).Msg("mark file")
+					}
+
 					log.Debug().
 						Int("file_count", st.FileCount).
 						Msg("detect")
@@ -177,7 +182,7 @@ func init() {
 						Path:   filename,
 						Length: int64(len(resp.Body)),
 						Data:   resp.Body,
-						URL:    resp.Request.URL.String(),
+						URL:    u,
 					}
 					err := handle(ctx, st, fi)
 					if err != nil {
@@ -253,7 +258,7 @@ func handle(ctx context.Context, st *scrape.Stat, f *util.File) (err error) {
 	cb := func(ctx context.Context, file *util.File) error {
 		return handle(ctx, st, file)
 	}
-	ext := handlers.Ext(f)
+	ext := handlers.FileExt(f)
 	fn := f.Name()
 
 	log := log.With().Str("file", f.Path).Str("ext", ext).Logger()

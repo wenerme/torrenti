@@ -10,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wenerme/torrenti/pkg/serve"
+
 	"gorm.io/driver/postgres"
 
 	"github.com/pkg/errors"
@@ -19,12 +21,13 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-func newDB(conf *DatabaseConf) (db *sql.DB, gdb *gorm.DB, err error) {
+func newDB(conf *serve.DatabaseConf) (db *sql.DB, gdb *gorm.DB, err error) {
 	dsn := conf.DSN
 	driver := conf.Driver
 
 	gc := &gorm.Config{
-		Logger: newGLogger(conf),
+		Logger:                                   newGLogger(conf),
+		DisableForeignKeyConstraintWhenMigrating: conf.GORM.DisableForeignKeyConstraintWhenMigrating,
 	}
 	switch conf.Type {
 	case "sqlite":
@@ -115,21 +118,21 @@ func newDB(conf *DatabaseConf) (db *sql.DB, gdb *gorm.DB, err error) {
 	return db, gdb, err
 }
 
-func newGLogger(conf *DatabaseConf) logger.Interface {
+func newGLogger(conf *serve.DatabaseConf) logger.Interface {
 	return logger.New(log.New(os.Stdout, "\r\n", log.LstdFlags), newGLoggerConf(conf))
 }
 
-func newGLoggerConf(conf *DatabaseConf) logger.Config {
+func newGLoggerConf(conf *serve.DatabaseConf) logger.Config {
 	lc := logger.Config{
 		SlowThreshold:             200 * time.Millisecond,
 		LogLevel:                  logger.Warn,
-		IgnoreRecordNotFoundError: conf.Log.IgnoreNotFound,
+		IgnoreRecordNotFoundError: conf.GORM.Log.IgnoreNotFound,
 		Colorful:                  true,
 	}
-	if conf.Type == "sqlite" && conf.Log.SlowThreshold == 0 {
+	if conf.Type == "sqlite" && conf.GORM.Log.SlowThreshold == 0 {
 		lc.SlowThreshold = time.Second
 	} else {
-		lc.SlowThreshold = conf.Log.SlowThreshold
+		lc.SlowThreshold = conf.GORM.Log.SlowThreshold
 	}
 	return lc
 }

@@ -26,6 +26,10 @@ plugins:
       #- standalone=true
   - name: openapiv2
     out: openapiv2
+  - name: grpc-gateway-ts
+    out: gen/web/api
+    opt: paths=source_relative
+
 #  - name: micro
 #    out: .
 #    opt:

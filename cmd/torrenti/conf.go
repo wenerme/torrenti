@@ -6,23 +6,23 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/mitchellh/mapstructure"
 	"github.com/rs/zerolog/log"
+	"github.com/wenerme/torrenti/pkg/serve"
 	"github.com/wenerme/torrenti/pkg/torrenti/util"
 	"go.uber.org/multierr"
 )
 
 type Config struct {
 	util.DirConf `yaml:",inline"`
-	PluginDir    string       `env:"PLUGIN_DIR" yaml:"plugin_dir,omitempty"`
-	DB           DatabaseConf `envPrefix:"DB_" yaml:"db,omitempty"`
-	Log          LogConf      `envPrefix:"LOG_" yaml:"log,omitempty"`
-	HTTP         HTTPConf     `envPrefix:"HTTP_" yaml:"http,omitempty"`
-	Debug        DebugConf    `envPrefix:"DEBUG_" yaml:"debug,omitempty"`
-	GRPC         GRPCConf     `envPrefix:"GRPC_" yaml:"grpc,omitempty"`
-	Scrape       ScrapeConf   `envPrefix:"SCRAPE_" yaml:"scrape,omitempty"`
+	PluginDir    string             `env:"PLUGIN_DIR" yaml:"plugin_dir,omitempty"`
+	DB           serve.DatabaseConf `envPrefix:"DB_" yaml:"db,omitempty"`
+	Log          serve.LogConf      `envPrefix:"LOG_" yaml:"log,omitempty"`
+	HTTP         serve.HTTPConf     `envPrefix:"HTTP_" yaml:"http,omitempty"`
+	Debug        serve.DebugConf    `envPrefix:"DEBUG_" yaml:"debug,omitempty"`
+	GRPC         serve.GRPCConf     `envPrefix:"GRPC_" yaml:"grpc,omitempty"`
+	Scrape       ScrapeConf         `envPrefix:"SCRAPE_" yaml:"scrape,omitempty"`
 
 	Torrent TorrentConf `envPrefix:"TORRENT_" yaml:"torrent,omitempty"`
 	Sub     SubConf     `envPrefix:"SUB_" yaml:"sub,omitempty"`
@@ -62,7 +62,7 @@ func (conf *Config) defaults() {
 	}
 
 	if conf.Torrent.DB.Type == "" {
-		defaultTo(&conf.Sub.DB, DatabaseConf{
+		defaultTo(&conf.Sub.DB, serve.DatabaseConf{
 			Type:     "sqlite",
 			Database: "$DATA_DIR/torrenti.sqlite",
 			Attributes: map[string]string{
@@ -71,7 +71,7 @@ func (conf *Config) defaults() {
 		})
 	}
 	if conf.Sub.DB.Type == "" {
-		defaultTo(&conf.Sub.DB, DatabaseConf{
+		defaultTo(&conf.Sub.DB, serve.DatabaseConf{
 			Type:     "sqlite",
 			Database: "$DATA_DIR/subi.sqlite",
 			Attributes: map[string]string{
@@ -80,11 +80,13 @@ func (conf *Config) defaults() {
 		})
 	}
 	if conf.Scrape.Store.DB.Type == "" {
-		defaultTo(&conf.Scrape.Store.DB, DatabaseConf{
+		defaultTo(&conf.Scrape.Store.DB, serve.DatabaseConf{
 			Type:     "sqlite",
 			Database: "$CACHE_DIR/scraper-store.db",
-			Log: SQLLogConf{
-				IgnoreNotFound: true,
+			GORM: serve.GORMConf{
+				Log: serve.SQLLogConf{
+					IgnoreNotFound: true,
+				},
 			},
 			Attributes: map[string]string{
 				"cache": "shared",
@@ -120,67 +122,15 @@ func defaultTo(a interface{}, def interface{}) {
 	}
 }
 
-type DatabaseConf struct {
-	Type         string     `env:"TYPE" yaml:"type,omitempty"`
-	Driver       string     `env:"DRIVER" yaml:"driver,omitempty"`
-	Database     string     `env:"DATABASE" yaml:"database,omitempty"`
-	Username     string     `env:"USERNAME" yaml:"username,omitempty"`
-	Password     string     `env:"PASSWORD" yaml:"password,omitempty"`
-	Host         string     `env:"HOST" yaml:"host,omitempty"`
-	Port         int        `env:"PORT" yaml:"port,omitempty"`
-	Schema       string     `env:"SCHEMA" yaml:"schema,omitempty"`
-	CreateSchema bool       `env:"CREATE_SCHEMA" yaml:"create_schema,omitempty"`
-	DSN          string     `env:"DSN" yaml:"dsn,omitempty"`
-	Log          SQLLogConf `envPrefix:"LOG_" yaml:"log,omitempty"`
-
-	DriverOptions DatabaseDriverOptions `envPrefix:"DRIVER_" yaml:"driver_options,omitempty"`
-	Attributes    map[string]string     `envPrefix:"ATTR_" yaml:"attributes,omitempty"` // ConnectionAttributes
-}
-
-type DatabaseDriverOptions struct {
-	MaxIdleConnections int            `env:"MAX_IDLE_CONNS" yaml:"max_idle_connections,omitempty"`
-	MaxOpenConnections int            `env:"MAX_OPEN_CONNS" yaml:"max_open_connections,omitempty"`
-	ConnMaxIdleTime    time.Duration  `env:"MAX_IDLE_TIME" yaml:"conn_max_idle_time,omitempty"`
-	ConnMaxLifetime    *time.Duration `env:"MAX_LIVE_TIME" yaml:"conn_max_lifetime,omitempty"`
-}
-
-type SQLLogConf struct {
-	SlowThreshold  time.Duration `env:"SLOW_THRESHOLD" yaml:"slow_threshold,omitempty"`
-	IgnoreNotFound bool          `env:"IGNORE_NOT_FOUND" yaml:"ignore_not_found,omitempty"`
-	Debug          bool          `env:"DEBUG" yaml:"debug,omitempty"`
-}
-
-type LogConf struct {
-	Level string `env:"LEVEL" envDefault:"info" yaml:"level,omitempty"`
-}
-
-type GRPCConf struct {
-	util.ListenConf `yaml:",inline"`
-	Enabled         bool            `env:"ENABLED" envDefault:"true" yaml:"enabled,omitempty"`
-	Gateway         GRPCGatewayConf `envPrefix:"GATEWAY_" yaml:"gateway,omitempty"`
-}
-type GRPCGatewayConf struct {
-	util.ListenConf `yaml:",inline"`
-	Enabled         bool   `env:"ENABLED" envDefault:"true" yaml:"enabled,omitempty"`
-	Prefix          string `env:"PREFIX" yaml:"prefix,omitempty"`
-}
-
-type HTTPConf struct {
-	util.ListenConf `yaml:",inline"`
-}
-type DebugConf struct {
-	util.ListenConf `yaml:",inline"`
-	Enabled         bool `env:"ENABLED" envDefault:"true" yaml:"enabled,omitempty"`
-}
 type TorrentConf struct {
-	DB DatabaseConf `envPrefix:"DB_" yaml:"db,omitempty"`
+	DB serve.DatabaseConf `envPrefix:"DB_" yaml:"db,omitempty"`
 }
 type SubConf struct {
-	DB DatabaseConf `envPrefix:"DB_" yaml:"db,omitempty"`
+	DB serve.DatabaseConf `envPrefix:"DB_" yaml:"db,omitempty"`
 }
 
 type ScrapeStoreConf struct {
-	DB DatabaseConf `envPrefix:"STORE_DB_" yaml:"db,omitempty"`
+	DB serve.DatabaseConf `envPrefix:"STORE_DB_" yaml:"db,omitempty"`
 }
 type ScrapeConf struct {
 	Debug ScrapeDebugConf `envPrefix:"DEBUG_" yaml:"debug,omitempty"`

@@ -5,6 +5,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
+	"time"
+
+	"github.com/gocolly/colly/v2/queue"
+	"github.com/wenerme/torrenti/pkg/serve"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -87,8 +92,24 @@ func runScrape(cc *cli.Context) error {
 		}
 	}
 
-	svc.G.Add(func() error {
-		return sc.Queue.Run(c)
+	svc.G.Add(func() (err error) {
+		size := 0
+		for err == nil {
+			size, err = sc.QueueStorage.QueueSize()
+			if err != nil {
+				return errors.Wrap(err, "get queue size")
+			}
+			if size == 0 {
+				time.Sleep(time.Second * 10)
+				continue
+			}
+			log.Info().Int("size", size).Msg("pull queue")
+			sc.Queue, err = queue.New(runtime.GOMAXPROCS(1), sc.QueueStorage)
+			if err == nil {
+				err = sc.Queue.Run(c)
+			}
+		}
+		return
 	}, func(err error) {
 		sc.Queue.Stop()
 	})
@@ -147,4 +168,8 @@ func registerScrapeMetrics(sc *scrape.Context) {
 	}, func() float64 {
 		return float64(colly.CacheInvalid)
 	})
+}
+
+func serveScrape(sc *serve.Context) (err error) {
+	return
 }

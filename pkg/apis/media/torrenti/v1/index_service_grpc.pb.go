@@ -2,7 +2,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.2.0
 // - protoc             (unknown)
-// source: indexer/torrenti/v1/index_service.proto
+// source: media/torrenti/v1/index_service.proto
 
 package torrentiv1
 
@@ -37,7 +37,7 @@ func NewTorrentIndexServiceClient(cc grpc.ClientConnInterface) TorrentIndexServi
 
 func (c *torrentIndexServiceClient) IndexTorrent(ctx context.Context, in *IndexTorrentRequest, opts ...grpc.CallOption) (*IndexTorrentResponse, error) {
 	out := new(IndexTorrentResponse)
-	err := c.cc.Invoke(ctx, "/indexer.torrenti.v1.TorrentIndexService/IndexTorrent", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/media.torrenti.v1.TorrentIndexService/IndexTorrent", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +46,7 @@ func (c *torrentIndexServiceClient) IndexTorrent(ctx context.Context, in *IndexT
 
 func (c *torrentIndexServiceClient) Stat(ctx context.Context, in *StatRequest, opts ...grpc.CallOption) (*StatResponse, error) {
 	out := new(StatResponse)
-	err := c.cc.Invoke(ctx, "/indexer.torrenti.v1.TorrentIndexService/Stat", in, out, opts...)
+	err := c.cc.Invoke(ctx, "/media.torrenti.v1.TorrentIndexService/Stat", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +95,7 @@ func _TorrentIndexService_IndexTorrent_Handler(srv interface{}, ctx context.Cont
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/indexer.torrenti.v1.TorrentIndexService/IndexTorrent",
+		FullMethod: "/media.torrenti.v1.TorrentIndexService/IndexTorrent",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(TorrentIndexServiceServer).IndexTorrent(ctx, req.(*IndexTorrentRequest))
@@ -113,7 +113,7 @@ func _TorrentIndexService_Stat_Handler(srv interface{}, ctx context.Context, dec
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/indexer.torrenti.v1.TorrentIndexService/Stat",
+		FullMethod: "/media.torrenti.v1.TorrentIndexService/Stat",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(TorrentIndexServiceServer).Stat(ctx, req.(*StatRequest))
@@ -125,7 +125,7 @@ func _TorrentIndexService_Stat_Handler(srv interface{}, ctx context.Context, dec
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var TorrentIndexService_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "indexer.torrenti.v1.TorrentIndexService",
+	ServiceName: "media.torrenti.v1.TorrentIndexService",
 	HandlerType: (*TorrentIndexServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -138,5 +138,5 @@ var TorrentIndexService_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "indexer/torrenti/v1/index_service.proto",
+	Metadata: "media/torrenti/v1/index_service.proto",
 }

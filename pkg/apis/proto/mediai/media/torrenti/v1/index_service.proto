@@ -1,11 +1,11 @@
 syntax = "proto3";
 
-package indexer.torrenti.v1;
+package media.torrenti.v1;
 
 import "google/api/annotations.proto";
 import "google/api/httpbody.proto";
 import "google/protobuf/timestamp.proto";
-import "indexer/common/file.proto";
+import "media/common/file.proto";
 
 service TorrentIndexService {
   rpc IndexTorrent(IndexTorrentRequest) returns (IndexTorrentResponse) {
@@ -35,7 +35,7 @@ message Stat {
 }
 
 message IndexTorrentRequest {
-  indexer.common.File file = 1;
+  media.common.File file = 1;
   string hash = 2;
 }
 

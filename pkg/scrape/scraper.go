@@ -32,6 +32,7 @@ type Context struct {
 	Fatal           bool
 	Store           *VisitStore
 	Queue           *queue.Queue
+	QueueStorage    queue.Storage
 	DB              *gorm.DB
 	Context         context.Context
 	Stat            *Stat
@@ -60,8 +61,11 @@ func (sc *Context) Init() (err error) {
 	if sc.Store == nil {
 		sc.Store = &VisitStore{DB: sc.DB}
 	}
+	if sc.QueueStorage == nil {
+		sc.QueueStorage = &QueueStorage{DB: sc.DB}
+	}
 	if sc.Queue == nil {
-		sc.Queue, err = queue.New(runtime.GOMAXPROCS(1), &QueueStorage{DB: sc.DB})
+		sc.Queue, err = queue.New(runtime.GOMAXPROCS(1), sc.QueueStorage)
 	}
 	if sc.Stat == nil {
 		sc.Stat = &Stat{}
@@ -163,7 +167,7 @@ func (sc *Context) QueueVisit(o QueueVisitOptions) (err error) {
 		if r.Ctx == nil {
 			r.Ctx = colly.NewContext()
 		}
-		r.Ctx.Put("_referer", referer)
+		r.Ctx.Put(ctxKeyReferer, referer)
 	}
 	log.Debug().Msg("queue")
 	err = sc.Queue.AddRequest(r)

@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package media.indexer.v1;
+import "google/api/annotations.proto";
+import "google/api/httpbody.proto";
+import "google/protobuf/timestamp.proto";
+import "media/common/file.proto";
+
+service IndexService {
+  rpc Index(IndexRequest) returns (IndexResponse) {
+    option (google.api.http) = {
+      post: "/index"
+      body: "*"
+    };
+  }
+}
+
+message IndexRequest {
+  media.common.File file = 1;
+  string url = 2;
+}
+
+message IndexResponse {
+
+}

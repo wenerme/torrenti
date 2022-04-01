@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package media.web.v1;
+
+import "google/api/annotations.proto";
+import "google/api/httpbody.proto";
+import "google/protobuf/timestamp.proto";
+import "media/common/file.proto";
+
+
+service WebService {
+  rpc ListTorrentRef(ListTorrentRefRequest) returns (ListTorrentRefResponse) {
+    option (google.api.http) = {
+      get: "/torrents"
+    };
+  }
+  rpc GetTorrent(GetTorrentRequest) returns (GetTorrentResponse) {
+    option (google.api.http) = {
+      get: "/torrents/{hash}"
+    };
+  }
+}
+
+message GetTorrentRequest {
+  string hash = 1;
+}
+message GetTorrentResponse {
+  Torrent item = 1;
+}
+
+message TorrentRef {
+  string file_name = 1;
+  string file_hash = 2;
+  string referer = 3;
+  string comment = 4;
+  string created_by = 5;
+  google.protobuf.Timestamp created_at = 6;
+  string torrent_hash = 7;
+  optional Torrent torrent = 8;
+}
+
+message Torrent {
+  string file_name = 1;
+  string hash = 2;
+  string magnet = 3;
+  int64 file_size = 4;
+  int32 file_count = 5;
+  string ext = 6;
+  bool is_dir = 7;
+}
+
+message ListTorrentRefRequest{}
+message ListTorrentRefResponse{
+  repeated TorrentRef items = 1;
+}
+

@@ -14,10 +14,13 @@ type MetaFile struct {
 	CreationDate int64
 	Comment      string
 	Encoding     string
+	Announce     string
 	Size         int64   `gorm:"index"`
-	SourceURL    *string `gorm:"index"`
+	Referer      *string `gorm:"index"`
 	Raw          datatypes.JSON
 	RawBytes     []byte
+
+	Torrent *Torrent `gorm:"foreignKey:TorrentHash;references:Hash"`
 }
 
 type TorrentFile struct {
@@ -38,6 +41,16 @@ type Torrent struct {
 	PieceCount    int
 	IsDir         bool
 	InfoBytes     []byte
+}
+
+type Tracker struct {
+	Model
+	URL      string `gorm:"unique"`
+	Protocol string
+}
+
+func (Tracker) ConflictColumns() []clause.Column {
+	return []clause.Column{{Name: "url"}}
 }
 
 func (Torrent) ConflictColumns() []clause.Column {

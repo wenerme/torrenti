@@ -1,6 +1,8 @@
 package scrape
 
 import (
+	"strings"
+
 	"github.com/wenerme/torrenti/pkg/torrenti/models"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -29,6 +31,10 @@ func (s *VisitStore) Init() error {
 
 func (s *VisitStore) IsScraped(url string) (visited bool, err error) {
 	var record VisitRecord
+	// FIXME remove this
+	if strings.HasPrefix(url, "https:") {
+		url = strings.ReplaceAll(url, "https:", "http:")
+	}
 	err = s.DB.Where(VisitRecord{URL: url}).Limit(1).Find(&record).Error
 	return record.Scraped, err
 }

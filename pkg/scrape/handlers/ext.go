@@ -10,7 +10,15 @@ import (
 	"github.com/wenerme/torrenti/pkg/torrenti/util"
 )
 
-func Ext(f *util.File) string {
+func Ext(s string) string {
+	ext := filepath.Ext(s)
+	if !IsValidExt(ext) {
+		return ""
+	}
+	return ext
+}
+
+func FileExt(f *util.File) string {
 	ext := strings.ToLower(filepath.Ext(f.Name()))
 	neo := ext
 	// sanitize
@@ -34,7 +42,7 @@ func Ext(f *util.File) string {
 		case len(ext) <= 1 || ext[0] != '.':
 			ext = ""
 		// case strings.Contains(".abcdefghijklmnopqrstuvwxyz", ext):
-		case !isValidExt(ext):
+		case !IsValidExt(ext):
 			ext = ""
 		case ext != ".html" && ext != ".htm" && len(f.Data) > 4 && strings.EqualFold(string(f.Data[:5]), "<html"):
 			// error page
@@ -48,16 +56,18 @@ func Ext(f *util.File) string {
 	return ext
 }
 
-func isValidExt(s string) bool {
-	for _, r := range s {
+func IsValidExt(s string) bool {
+	valid := false
+	for i, r := range s {
 		switch {
-		case r == '.':
-		case r >= 'a' && r <= 'z':
+		case i == 0 && r == '.':
+		case i != 0 && ((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')):
+			valid = true
 		default:
 			return false
 		}
 	}
-	return true
+	return valid
 }
 
 func isTorrent(d []byte) bool {

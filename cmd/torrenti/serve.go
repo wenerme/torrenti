@@ -4,6 +4,10 @@ import (
 	"context"
 	"net/http"
 
+	torrentiv12 "github.com/wenerme/torrenti/pkg/apis/media/torrenti/v1"
+	webv1 "github.com/wenerme/torrenti/pkg/apis/media/web/v1"
+	"github.com/wenerme/torrenti/pkg/web"
+
 	"github.com/wenerme/torrenti/pkg/torrenti/util"
 
 	"github.com/wenerme/torrenti/pkg/serve"
@@ -14,7 +18,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli/v2"
-	torrentiv1 "github.com/wenerme/torrenti/pkg/apis/indexer/torrenti/v1"
 	"go.uber.org/multierr"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -38,9 +41,17 @@ func runServer(cc *cli.Context) (err error) {
 
 	registerDebug(sc)
 	serve.RegisterEndpoints(&serve.ServiceEndpoint{
-		Desc:            &torrentiv1.TorrentIndexService_ServiceDesc,
+		Desc:            &torrentiv12.TorrentIndexService_ServiceDesc,
 		Impl:            &services.TorrentIndexerServer{Indexer: getTorrentIndexer()},
-		RegisterGateway: torrentiv1.RegisterTorrentIndexServiceHandler,
+		RegisterGateway: torrentiv12.RegisterTorrentIndexServiceHandler,
+	})
+
+	serve.RegisterEndpoints(&serve.ServiceEndpoint{
+		Desc: &webv1.WebService_ServiceDesc,
+		Impl: web.NewWebServiceServer(web.NewWebServiceServerOptions{
+			DB: getTorrentIndexer().DB,
+		}),
+		RegisterGateway: webv1.RegisterWebServiceHandler,
 	})
 
 	err = multierr.Combine(
@@ -48,6 +59,7 @@ func runServer(cc *cli.Context) (err error) {
 		serveDebug(sc),
 		serveGRPC(sc),
 		serveGRPCGateway(sc),
+		serveScrape(sc),
 	)
 
 	if err != nil {

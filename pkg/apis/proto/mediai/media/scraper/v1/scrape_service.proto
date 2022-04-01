@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package media.scraper.v1;
+
+import "google/api/annotations.proto";
+import "google/api/httpbody.proto";
+import "google/protobuf/timestamp.proto";
+import "media/common/file.proto";
+
+service ScrapeService {
+  rpc Scrape(ScrapeRequest) returns (ScrapeResponse) {
+    option (google.api.http) = {
+      post: "/scrape"
+      body: "*"
+    };
+  }
+  rpc State(StateRequest) returns (StateResponse) {
+    option (google.api.http) = {
+      get: "/state"
+    };
+  }
+}
+message StateRequest{
+  string url = 1;
+}
+message StateResponse{
+  string url = 1;
+  bool visiting = 2;
+  bool scraped = 3;
+  optional string error = 4;
+}
+
+message ScrapeRequest {
+  string url = 1;
+  string referer = 2;
+}
+message ScrapeResponse {
+  string url = 1;
+}

@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package indexer.common;
+package media.common;
 
 import "google/protobuf/timestamp.proto";
 

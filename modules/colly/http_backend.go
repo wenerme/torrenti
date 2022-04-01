@@ -141,7 +141,10 @@ func (h *httpBackend) Cache(request *http.Request, bodySize int, checkHeadersFun
 		atomic.AddInt64(&CacheSkip, 1)
 		return h.Do(request, bodySize, checkHeadersFunc)
 	}
-	sum := sha1.Sum([]byte(request.URL.String()))
+	u := *request.URL
+	// normalize
+	u.Scheme = "http"
+	sum := sha1.Sum([]byte(u.String()))
 	hash := hex.EncodeToString(sum[:])
 	dir := path.Join(cacheDir, hash[:2])
 	filename := path.Join(dir, hash)
