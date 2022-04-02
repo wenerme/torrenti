@@ -33,6 +33,7 @@ func newServeContext(cc *cli.Context) *serve.Context {
 }
 
 func runServer(cc *cli.Context) (err error) {
+	log.Info().Str("build", util.ReadBuildInfo().String()).Msg("start server")
 	sc := newServeContext(cc)
 	ctx, cancel := context.WithCancel(sc.Context)
 	defer cancel()

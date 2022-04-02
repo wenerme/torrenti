@@ -2,6 +2,8 @@ package web
 
 import (
 	"context"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 
 	"github.com/samber/lo"
 	webv1 "github.com/wenerme/torrenti/pkg/apis/media/web/v1"
@@ -36,6 +38,15 @@ func (s *webServiceServer) ListTorrentRef(ctx context.Context, req *webv1.ListTo
 }
 
 func (s *webServiceServer) GetTorrent(ctx context.Context, req *webv1.GetTorrentRequest) (resp *webv1.GetTorrentResponse, err error) {
+	var out *models.Torrent
+	err = s.DB.Where(models.Torrent{Hash: req.GetHash()}).Find(&out).Error
+	if err == gorm.ErrRecordNotFound {
+		err = status.Errorf(codes.NotFound, "torrent not found")
+		return
+	}
+	resp = &webv1.GetTorrentResponse{
+		Item: toTorrent(out),
+	}
 	return
 }
 
