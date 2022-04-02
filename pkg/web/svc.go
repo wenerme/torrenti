@@ -28,7 +28,7 @@ type webServiceServer struct {
 func (s *webServiceServer) ListTorrentRef(ctx context.Context, req *webv1.ListTorrentRefRequest) (resp *webv1.ListTorrentRefResponse, err error) {
 	resp = &webv1.ListTorrentRefResponse{}
 	var out []*models.MetaFile
-	if err = s.DB.Limit(100).Preload("Torrent").Find(&out).Error; err != nil {
+	if err = s.DB.Limit(100).Order("created_at desc").Preload("Torrent").Find(&out).Error; err != nil {
 		return
 	}
 	resp.Items = lo.Map(out, toTorrentRef)
