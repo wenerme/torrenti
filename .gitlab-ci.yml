@@ -27,6 +27,7 @@ Build:
 
 default:
   cache:
+    untracked: true
     key: '$CI_COMMIT_REF_SLUG'
     paths:
       - .cache
