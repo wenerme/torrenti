@@ -25,6 +25,7 @@ bin/torrenti:
 bin/torrenti_linux_amd64:
 	GOOS=linux GOAMD64=v3 CGO_ENABLED=0 go build -ldflags '-s -w' -trimpath -o bin/torrenti_linux_amd64 ./cmd/torrenti
 
+#ls -d pkg/indexer/plugins/* | xargs -n 1 -I {} sh -c 'CGO_ENABLED=1 go build -ldflags "-s -w" -trimpath -buildmode=plugin -o bin/plugins/`basename {}`.so ./{}'
 build:
-	ls -d pkg/indexer/plugins/* | xargs -n 1 -I {} sh -c 'CGO_ENABLED=1 go build -ldflags "-s -w" -trimpath -buildmode=plugin -o bin/plugins/`basename {}`.so ./{}'
-	CGO_ENABLED=1 go build -ldflags '-s -w' -trimpath -o bin/torrenti ./cmd/torrenti
+	go env
+	CGO_ENABLED=0 go build -ldflags '-s -w' -trimpath -o bin/torrenti ./cmd/torrenti
