@@ -185,31 +185,42 @@ func setup(ctx *cli.Context) error {
 		log.Logger = zerolog.New(output).Level(l).With().Stack().Timestamp().Logger()
 	}
 
-	cfgFile := os.ExpandEnv(ctx.String("config"))
-	if cfgFile == "" {
-		cfgFile = filepath.Join(conf.ConfigDir, "config.yaml")
-		if _, err := os.Stat(cfgFile); err != nil {
-			log.Debug().Str("path", cfgFile).Msg("default config file not found")
-			cfgFile = ""
-		}
+	if err := env.Parse(&conf.DirConf); err != nil {
+		return err
+	}
+	conf.InitDirConf(Name)
+
+	cfgs := []string{
+		filepath.Join(conf.ConfigDir, "config.yaml"),
+		"./config.yaml",
+		os.ExpandEnv(ctx.String("config")),
 	}
 
-	if cfgFile == "" {
-		if _, err := os.Stat("./config.yaml"); err == nil {
-			cfgFile = "./config.yaml"
-		}
-	}
+	{
+		var err error
+		for _, v := range cfgs {
+			if v == "" {
+				continue
+			}
+			v, err = filepath.Abs(v)
+			if err != nil {
+				log.Err(err).Str("config", v).Msg("abs")
+				continue
+			}
+			if _, err = os.Stat(v); err != nil {
+				log.Trace().Err(err).Str("config", v).Msg("config not exists")
+				continue
+			}
+			log.Debug().Str("config", v).Msg("use config")
 
-	if cfgFile != "" {
-		log.Debug().Str("path", cfgFile).Msg("use config file")
-
-		bytes, err := ioutil.ReadFile(cfgFile)
-		if err != nil {
-			return err
-		}
-		err = yaml.Unmarshal(bytes, conf)
-		if err != nil {
-			return err
+			bytes, err := ioutil.ReadFile(v)
+			if err != nil {
+				return err
+			}
+			err = yaml.Unmarshal(bytes, conf)
+			if err != nil {
+				return err
+			}
 		}
 	}
 
@@ -224,7 +235,6 @@ func setup(ctx *cli.Context) error {
 		log.Logger = log.Level(l)
 	}
 
-	conf.InitDirConf(Name)
 	conf.defaults()
 
 	log.Debug().Str("config_dir", conf.ConfigDir).Msg("conf")
