@@ -26,6 +26,8 @@ Build:
 #  - export GOPROXY=https://mirrors.aliyun.com/goproxy/,direct
 
 default:
+  before_script:
+    - *go_before
   cache:
     untracked: true
     key: '$CI_COMMIT_REF_SLUG'
