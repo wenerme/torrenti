@@ -115,16 +115,16 @@ func (mm *MetricsMiddleware) Handle() func(next http.Handler) http.Handler {
 		httpRequestTotal.WithLabelValues(strconv.Itoa(v))
 	}
 
-	log.Info().Msg("Registering metrics")
-	mm.Registry.MustRegister(
-		httpRequestTotal,
-		httpRequestsInflight,
-		httpRequestDurHistogram,
-		httpResponseSizeHistogram,
-		httpRequestSizeHistogram,
-	)
-
 	return func(next http.Handler) http.Handler {
+		log.Debug().Msg("Registering metrics")
+		mm.Registry.MustRegister(
+			httpRequestTotal,
+			httpRequestsInflight,
+			httpRequestDurHistogram,
+			httpResponseSizeHistogram,
+			httpRequestSizeHistogram,
+		)
+
 		next = promhttp.InstrumentHandlerCounter(httpRequestTotal, next)
 		next = promhttp.InstrumentHandlerInFlight(httpRequestsInflight, next)
 		next = promhttp.InstrumentHandlerDuration(httpRequestDurHistogram, next)

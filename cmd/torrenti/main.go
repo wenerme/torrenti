@@ -117,6 +117,31 @@ func main() {
 				},
 			},
 			{
+				Name: "search",
+				Subcommands: cli.Commands{
+					{
+						Name:   "index",
+						Usage:  "indexing doc",
+						Action: runSearchIndex,
+					},
+					{
+						Name:   "query",
+						Usage:  "query doc",
+						Action: runSearchQuery,
+						Flags: []cli.Flag{
+							&cli.IntFlag{
+								Name:  "limit",
+								Value: 10,
+							},
+							&cli.IntFlag{
+								Name:  "offset",
+								Value: 0,
+							},
+						},
+					},
+				},
+			},
+			{
 				Name: "magnet",
 				Subcommands: cli.Commands{
 					{
@@ -182,7 +207,11 @@ func setup(ctx *cli.Context) error {
 			l = lvl
 		}
 		output := zerolog.ConsoleWriter{Out: os.Stdout, TimeFormat: time.RFC3339}
-		log.Logger = zerolog.New(output).Level(l).With().Stack().Timestamp().Logger()
+		b := zerolog.New(output).Level(l).With().Stack().Timestamp()
+		if l <= zerolog.DebugLevel {
+			b = b.Caller()
+		}
+		log.Logger = b.Logger()
 	}
 
 	if err := env.Parse(&conf.DirConf); err != nil {
@@ -287,14 +316,14 @@ func addTorrent(ctx *cli.Context) error {
 }
 
 var (
-	_torrenti     *torrenti.Indexer
+	_torrenti     *torrenti.Service
 	_torrentiOnce = new(sync.Once)
 	_subiOnce     = new(sync.Once)
 	_subi         *subi.Indexer
 	_ctx          *cli.Context
 )
 
-func getTorrentIndexer() *torrenti.Indexer {
+func getTorrentIndexer() *torrenti.Service {
 	_torrentiOnce.Do(_initIndexer)
 	return _torrenti
 }
@@ -311,7 +340,7 @@ func _initIndexer() {
 		panic(err)
 	}
 
-	_torrenti, err = torrenti.NewIndexer(torrenti.NewIndexerOptions{DB: gdb})
+	_torrenti, err = torrenti.NewIndexer(torrenti.NewServiceOptions{DB: gdb})
 	if err != nil {
 		panic(err)
 	}

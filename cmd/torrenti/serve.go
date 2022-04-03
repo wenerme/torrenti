@@ -3,8 +3,14 @@ package main
 import (
 	"context"
 	"net/http"
+	"path/filepath"
+	"time"
 
-	torrentiv12 "github.com/wenerme/torrenti/pkg/apis/media/torrenti/v1"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/go-chi/httplog"
+	"github.com/wenerme/torrenti/pkg/search"
+
+	torrentiv1 "github.com/wenerme/torrenti/pkg/apis/media/torrenti/v1"
 	webv1 "github.com/wenerme/torrenti/pkg/apis/media/web/v1"
 	"github.com/wenerme/torrenti/pkg/web"
 
@@ -42,15 +48,23 @@ func runServer(cc *cli.Context) (err error) {
 
 	registerDebug(sc)
 	serve.RegisterEndpoints(&serve.ServiceEndpoint{
-		Desc:            &torrentiv12.TorrentIndexService_ServiceDesc,
+		Desc:            &torrentiv1.TorrentIndexService_ServiceDesc,
 		Impl:            &services.TorrentIndexerServer{Indexer: getTorrentIndexer()},
-		RegisterGateway: torrentiv12.RegisterTorrentIndexServiceHandler,
+		RegisterGateway: torrentiv1.RegisterTorrentIndexServiceHandler,
 	})
+
+	ss, err := search.NewService(search.NewServiceOptions{
+		DataDir: filepath.Join(_conf.DataDir, "search"),
+	})
+	if err != nil {
+		return err
+	}
 
 	serve.RegisterEndpoints(&serve.ServiceEndpoint{
 		Desc: &webv1.WebService_ServiceDesc,
 		Impl: web.NewWebServiceServer(web.NewWebServiceServerOptions{
-			DB: getTorrentIndexer().DB,
+			DB:     getTorrentIndexer().DB,
+			Search: ss,
 		}),
 		RegisterGateway: webv1.RegisterWebServiceHandler,
 	})
@@ -90,33 +104,29 @@ func serveHTTP(sc *serve.Context) (err error) {
 		Handler: mux,
 	}
 
-	// mux.Use(serves.HandlerProvider("", serves.NewMetricsMiddleware(serves.MetricsMiddlewareConfig{})))
 	mux.Use(new(serve.MetricsMiddleware).Handle())
+	mux.Use(middleware.RequestID, middleware.RealIP, httplog.RequestLogger(log.Logger), middleware.Recoverer)
+	mux.Use(middleware.Timeout(60 * time.Second))
 
-	err = serve.SelectEndpoints(serve.SelectEndpointOptions[*serve.HTTPEndpoint]{}, func(e *serve.HTTPEndpoint) error {
-		return serve.ChiRoute(mux, e)
-	})
-	if err != nil {
-		return err
-	}
+	sc.G.Add(func() (err error) {
+		err = serve.SelectEndpoints(serve.SelectEndpointOptions[*serve.HTTPEndpoint]{}, func(e *serve.HTTPEndpoint) error {
+			return serve.ChiRoute(mux, e)
+		})
+		if err != nil {
+			return err
+		}
 
-	sc.G.Add(func() error {
+		log.Info().Str("addr", _conf.HTTP.GetAddr()).Msg("serve web server")
+		serve.LogRouter(log.With().Str("router", "default").Logger(), mux)
 		return errors.Wrap(_conf.HTTP.Serve(https), "serve web")
 	}, func(err error) {
 		log.Err(https.Close()).Msg("stop http server")
 	})
-
-	log.Info().Str("addr", _conf.HTTP.GetAddr()).Msg("serve web server")
-	serve.LogRouter(log.With().Str("router", "default").Logger(), mux)
-
 	return
 }
 
-func serveGRPC(sc *serve.Context) (err error) {
-	if !_conf.GRPC.Enabled {
-		return
-	}
-	grpcs := grpc.NewServer()
+func setupGRPC(sc *serve.Context, gc *serve.GRPCConf) (grpcs *grpc.Server, err error) {
+	grpcs = grpc.NewServer()
 	sc.GRPCS = grpcs
 
 	hs := health.NewServer()
@@ -125,23 +135,28 @@ func serveGRPC(sc *serve.Context) (err error) {
 		Impl: hs,
 	})
 
-	err = serve.SelectEndpoints(serve.SelectEndpointOptions[*serve.ServiceEndpoint]{}, func(e *serve.ServiceEndpoint) error {
-		hs.SetServingStatus(e.Desc.ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
-		grpcs.RegisterService(e.Desc, e.Impl)
-		return nil
-	})
-	if err != nil {
-		return
-	}
-
-	sc.G.Add(func() error {
-		return errors.Wrap(_conf.GRPC.Serve(grpcs), "serve grpc")
+	sc.G.Add(func() (err error) {
+		err = serve.SelectEndpoints(serve.SelectEndpointOptions[*serve.ServiceEndpoint]{}, func(e *serve.ServiceEndpoint) error {
+			hs.SetServingStatus(e.Desc.ServiceName, grpc_health_v1.HealthCheckResponse_SERVING)
+			grpcs.RegisterService(e.Desc, e.Impl)
+			return nil
+		})
+		if err != nil {
+			return
+		}
+		log.Info().Str("addr", gc.GetAddr()).Msg("serve grpc server")
+		return errors.Wrap(gc.Serve(grpcs), "serve grpc")
 	}, func(err error) {
 		grpcs.GracefulStop()
 	})
+	return
+}
 
-	log.Info().Str("addr", _conf.GRPC.GetAddr()).Msg("serve grpc server")
-
+func serveGRPC(sc *serve.Context) (err error) {
+	if !_conf.GRPC.Enabled {
+		return
+	}
+	_, err = setupGRPC(sc, &_conf.GRPC)
 	return
 }
 
@@ -186,30 +201,31 @@ func serveDebug(sc *serve.Context) (err error) {
 		return
 	}
 
-	log.Info().Str("addr", _conf.Debug.GetAddr()).Msg("serve debug server")
-
 	debug := chi.NewMux()
 	sc.Debug = debug
 	debugs := &http.Server{
 		Handler: debug,
 	}
 
-	err = serve.SelectEndpoints(serve.SelectEndpointOptions[*serve.HTTPEndpoint]{
-		Selector:   "debug",
-		Comparator: serve.HTTPEndpointSortByPathLen,
-	}, func(e *serve.HTTPEndpoint) error {
-		return serve.ChiRoute(debug, e)
-	})
-	if err != nil {
-		return
-	}
+	sc.G.Add(func() (err error) {
+		registerDebug(sc)
 
-	sc.G.Add(func() error {
+		err = serve.SelectEndpoints(serve.SelectEndpointOptions[*serve.HTTPEndpoint]{
+			Selector:   "debug",
+			Comparator: serve.HTTPEndpointSortByPathLen,
+		}, func(e *serve.HTTPEndpoint) error {
+			return serve.ChiRoute(debug, e)
+		})
+		if err != nil {
+			return
+		}
+
+		log.Info().Str("addr", _conf.Debug.GetAddr()).Msg("serve debug server")
+		serve.LogRouter(log.With().Str("router", "debug").Logger(), debug)
 		return errors.Wrap(_conf.Debug.Serve(debugs), "serve debug")
 	}, func(err error) {
 		log.Err(debugs.Close()).Msg("stop debug server")
 	})
 
-	serve.LogRouter(log.With().Str("router", "debug").Logger(), debug)
 	return
 }

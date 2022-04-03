@@ -29,3 +29,4 @@ bin/torrenti_linux_amd64:
 build:
 	go env
 	CGO_ENABLED=0 go build -ldflags '-s -w' -trimpath -o bin/torrenti ./cmd/torrenti
+	du -sh bin/*

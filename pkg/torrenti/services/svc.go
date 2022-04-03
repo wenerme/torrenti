@@ -9,7 +9,7 @@ import (
 )
 
 type TorrentIndexerServer struct {
-	Indexer *torrenti.Indexer
+	Indexer *torrenti.Service
 	torrentiv12.UnimplementedTorrentIndexServiceServer
 }
 

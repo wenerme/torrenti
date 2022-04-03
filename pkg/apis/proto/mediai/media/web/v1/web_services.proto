@@ -49,8 +49,14 @@ message Torrent {
   bool is_dir = 7;
 }
 
-message ListTorrentRefRequest{}
+message ListTorrentRefRequest{
+  string search = 1;
+  int32 page = 2;
+}
+
 message ListTorrentRefResponse{
   repeated TorrentRef items = 1;
+  bool  hasNext = 2;
+  bool  hasPrevious = 3;
 }
 

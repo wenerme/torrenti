@@ -30,8 +30,10 @@ type IndexRequest struct {
 	URL  string
 }
 
-type IndexResponse struct{}
-type Service struct{}
+type (
+	IndexResponse struct{}
+	Service       struct{}
+)
 
 func (s *Service) Index(ctx context.Context, req *IndexRequest) (resp *IndexResponse, err error) {
 	return

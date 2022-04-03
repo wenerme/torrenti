@@ -23,19 +23,19 @@ import (
 	"gorm.io/gorm"
 )
 
-type Indexer struct {
+type Service struct {
 	DB *gorm.DB
 }
 
-type NewIndexerOptions struct {
+type NewServiceOptions struct {
 	DB *gorm.DB
 }
 
-func NewIndexer(o NewIndexerOptions) (*Indexer, error) {
+func NewIndexer(o NewServiceOptions) (*Service, error) {
 	if o.DB == nil {
 		return nil, errors.New("db is nil")
 	}
-	idx := &Indexer{DB: o.DB}
+	idx := &Service{DB: o.DB}
 	if err := idx.DB.Migrator().AutoMigrate(
 		models.MetaFile{},
 		models.Torrent{},
@@ -64,7 +64,7 @@ type IndexTorrentRequest struct {
 	Hash string
 }
 
-func (idx *Indexer) Stat(ctx context.Context) (stat *IndexTorrentStat, err error) {
+func (idx *Service) Stat(ctx context.Context) (stat *IndexTorrentStat, err error) {
 	db := idx.DB
 	stat = &IndexTorrentStat{}
 	err = multierr.Combine(
@@ -77,7 +77,7 @@ func (idx *Indexer) Stat(ctx context.Context) (stat *IndexTorrentStat, err error
 	return
 }
 
-func (idx *Indexer) IndexTorrent(ctx context.Context, t *Torrent, opts ...func(o *IndexTorrentOptions)) (stat *IndexTorrentStat, err error) {
+func (idx *Service) IndexTorrent(ctx context.Context, t *Torrent, opts ...func(o *IndexTorrentOptions)) (stat *IndexTorrentStat, err error) {
 	o := &IndexTorrentOptions{
 		Stat: &IndexTorrentStat{},
 	}

@@ -50,5 +50,9 @@ func (e *HTTPEndpoint) Validate() error {
 }
 
 func (e HTTPEndpoint) String() string {
-	return fmt.Sprintf("%v %v | %v", e.Method, e.Path, e.EndpointDesc.String())
+	method := e.Method
+	if method == "" {
+		method = "ANY"
+	}
+	return fmt.Sprintf("%v %v | %v", method, e.Path, e.EndpointDesc.String())
 }
