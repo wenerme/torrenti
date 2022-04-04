@@ -91,7 +91,10 @@ func (s *webServiceServer) SearchTorrentRef(ctx context.Context, req *webv1.Sear
 	var out []*models.MetaFile
 	err = s.DB.Model(models.MetaFile{}).
 		Where("torrent_hash in (?)", ids).
-		Select([]string{"filename", "content_hash", "torrent_hash", "creation_date", "comment", "created_by"}).
+		Select([]string{
+			"filename", "content_hash", "torrent_hash", "creation_date",
+			"comment", "created_by",
+		}).
 		Preload("Torrent", func(db *gorm.DB) *gorm.DB {
 			return db.Select([]string{"name", "hash", "total_file_size", "file_count", "is_dir"})
 		}).
@@ -106,8 +109,10 @@ func (s *webServiceServer) SearchTorrentRef(ctx context.Context, req *webv1.Sear
 
 		if doc.Model.Torrent != nil {
 			doc.HighlightTorrentName = hi.BestFragment(doc.Match.Locations[search.TorrentFieldTorrentFileName], []byte(doc.Model.Torrent.Name))
+			doc.HighlightTorrentName = strings.ToValidUTF8(doc.HighlightTorrentName, "")
 		}
 		doc.HighlightFileName = hi.BestFragment(doc.Match.Locations[search.TorrentFieldMetaFileName], []byte(doc.Model.Filename))
+		doc.HighlightFileName = strings.ToValidUTF8(doc.HighlightFileName, "")
 
 		doc.HighlightTorrentName = search.MergeHTMLMark(doc.HighlightTorrentName)
 		doc.HighlightFileName = search.MergeHTMLMark(doc.HighlightFileName)
@@ -117,6 +122,12 @@ func (s *webServiceServer) SearchTorrentRef(ctx context.Context, req *webv1.Sear
 	for _, v := range docs {
 		vv := toItem(v)
 		if vv != nil {
+			vv.Item.TorrentHash = ""
+			// debug invalid utf8
+			//_, err := protojson.Marshal(vv)
+			//if err != nil {
+			//	log.Error().Err(err).Str("h", vv.Item.FileHash).Str("f", vv.Item.FileName).Msg("")
+			//}
 			resp.Items = append(resp.Items, vv)
 		}
 	}
