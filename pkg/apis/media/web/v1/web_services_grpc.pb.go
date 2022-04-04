@@ -25,6 +25,7 @@ const _ = grpc.SupportPackageIsVersion7
 type WebServiceClient interface {
 	ListTorrentRef(ctx context.Context, in *ListTorrentRefRequest, opts ...grpc.CallOption) (*ListTorrentRefResponse, error)
 	GetTorrent(ctx context.Context, in *GetTorrentRequest, opts ...grpc.CallOption) (*GetTorrentResponse, error)
+	SearchTorrentRef(ctx context.Context, in *SearchTorrentRefRequest, opts ...grpc.CallOption) (*SearchTorrentRefResponse, error)
 }
 
 type webServiceClient struct {
@@ -53,12 +54,22 @@ func (c *webServiceClient) GetTorrent(ctx context.Context, in *GetTorrentRequest
 	return out, nil
 }
 
+func (c *webServiceClient) SearchTorrentRef(ctx context.Context, in *SearchTorrentRefRequest, opts ...grpc.CallOption) (*SearchTorrentRefResponse, error) {
+	out := new(SearchTorrentRefResponse)
+	err := c.cc.Invoke(ctx, "/media.web.v1.WebService/SearchTorrentRef", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // WebServiceServer is the server API for WebService service.
 // All implementations must embed UnimplementedWebServiceServer
 // for forward compatibility
 type WebServiceServer interface {
 	ListTorrentRef(context.Context, *ListTorrentRefRequest) (*ListTorrentRefResponse, error)
 	GetTorrent(context.Context, *GetTorrentRequest) (*GetTorrentResponse, error)
+	SearchTorrentRef(context.Context, *SearchTorrentRefRequest) (*SearchTorrentRefResponse, error)
 	mustEmbedUnimplementedWebServiceServer()
 }
 
@@ -71,6 +82,10 @@ func (UnimplementedWebServiceServer) ListTorrentRef(context.Context, *ListTorren
 
 func (UnimplementedWebServiceServer) GetTorrent(context.Context, *GetTorrentRequest) (*GetTorrentResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method GetTorrent not implemented")
+}
+
+func (UnimplementedWebServiceServer) SearchTorrentRef(context.Context, *SearchTorrentRefRequest) (*SearchTorrentRefResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SearchTorrentRef not implemented")
 }
 func (UnimplementedWebServiceServer) mustEmbedUnimplementedWebServiceServer() {}
 
@@ -121,6 +136,24 @@ func _WebService_GetTorrent_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _WebService_SearchTorrentRef_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SearchTorrentRefRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WebServiceServer).SearchTorrentRef(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/media.web.v1.WebService/SearchTorrentRef",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WebServiceServer).SearchTorrentRef(ctx, req.(*SearchTorrentRefRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // WebService_ServiceDesc is the grpc.ServiceDesc for WebService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -135,6 +168,10 @@ var WebService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetTorrent",
 			Handler:    _WebService_GetTorrent_Handler,
+		},
+		{
+			MethodName: "SearchTorrentRef",
+			Handler:    _WebService_SearchTorrentRef_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -5,6 +5,7 @@ package media.web.v1;
 import "google/api/annotations.proto";
 import "google/api/httpbody.proto";
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
 import "media/common/file.proto";
 
 
@@ -19,6 +20,27 @@ service WebService {
       get: "/torrents/{hash}"
     };
   }
+  rpc SearchTorrentRef(SearchTorrentRefRequest) returns (SearchTorrentRefResponse) {
+    option (google.api.http) = {
+      get: "/torrents/search"
+    };
+  }
+}
+message SearchTorrentRefRequest {
+  string search = 1;
+  int32 limit = 2;
+  int32 offset = 3;
+}
+message SearchTorrentRefResponse {
+  repeated SearchTorrentRef items = 1;
+  int32 total = 2;
+  int32 duration = 3;
+}
+
+message SearchTorrentRef {
+  TorrentRef item = 1;
+  string highlight_file_name = 2;
+  string highlight_torrent_name = 3;
 }
 
 message GetTorrentRequest {

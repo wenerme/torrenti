@@ -117,13 +117,13 @@ func searchIndex(ss *search.Service, ts *torrenti.Service) (err error) {
 		lastID = out[len(out)-1].ID
 		n += len(out)
 
-		docs := make([]*search.Torrent, 0, len(out))
+		docs := make([]*search.TorrentDocument, 0, len(out))
 		for _, v := range out {
 			if v.Torrent == nil {
 				log.Warn().Str("hash", v.TorrentHash).Msg("torrent not found")
 				continue
 			}
-			docs = append(docs, &search.Torrent{
+			docs = append(docs, &search.TorrentDocument{
 				ID:              v.TorrentHash,
 				MetaFileName:    v.Filename,
 				TorrentFileName: v.Torrent.Name,

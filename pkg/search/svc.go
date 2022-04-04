@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/rs/zerolog/log"
+
 	"github.com/blugelabs/bluge"
 	"github.com/blugelabs/bluge/search"
 	"github.com/pkg/errors"
@@ -57,7 +59,7 @@ type DocumentMatch struct {
 	Locations search.FieldTermLocationMap
 }
 
-type Torrent struct {
+type TorrentDocument struct {
 	ID              string
 	Size            int64
 	MetaFileName    string
@@ -72,7 +74,7 @@ const (
 	docFieldCreatedAt           = "created_at"
 )
 
-func (m *Torrent) Document() *bluge.Document {
+func (m *TorrentDocument) Document() *bluge.Document {
 	doc := bluge.NewDocument(m.ID)
 
 	if m.MetaFileName != "" {
@@ -90,7 +92,11 @@ func (m *Torrent) Document() *bluge.Document {
 	return doc
 }
 
-func (s *Service) IndexTorrent(ctx context.Context, v []*Torrent) (err error) {
+type IsDocument interface {
+	Document() *bluge.Document
+}
+
+func (s *Service) IndexTorrent(ctx context.Context, v []*TorrentDocument) (err error) {
 	batch := bluge.NewBatch()
 	for _, t := range v {
 		doc := t.Document()
@@ -162,6 +168,10 @@ func (s *Service) SearchTorrent(ctx context.Context, req *SearchRequest) (resp *
 		})
 		if err != nil {
 			return
+		}
+		if o.ID == "" {
+			log.Warn().Uint64("num", doc.Number).Str("query", req.QueryString).Msg("empty id")
+			continue
 		}
 		resp.Docs = append(resp.Docs, o)
 	}

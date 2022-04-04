@@ -4,6 +4,10 @@ import (
 	"context"
 	"strings"
 
+	"github.com/blugelabs/bluge/search/highlight"
+	"github.com/rs/zerolog/log"
+	"github.com/wenerme/torrenti/pkg/torrenti"
+
 	"github.com/wenerme/torrenti/pkg/search"
 	"golang.org/x/exp/slices"
 	"google.golang.org/grpc/codes"
@@ -31,6 +35,89 @@ type webServiceServer struct {
 	webv1.UnimplementedWebServiceServer
 	DB     *gorm.DB
 	Search *search.Service
+}
+
+func (s *webServiceServer) SearchTorrentRef(ctx context.Context, req *webv1.SearchTorrentRefRequest) (resp *webv1.SearchTorrentRefResponse, err error) {
+	if req.Limit <= 0 || req.Limit > 200 {
+		req.Limit = 100
+	}
+	if req.Offset < 0 {
+		req.Offset = 0
+	}
+	if req.Search == "" {
+		return resp, status.Error(codes.InvalidArgument, "query is empty")
+	}
+	sr, err := s.Search.SearchTorrent(context.Background(), &search.SearchRequest{
+		QueryString: req.Search,
+		Limit:       int(req.Limit),
+		Offset:      int(req.Offset),
+	})
+	if err != nil {
+		return
+	}
+	resp = &webv1.SearchTorrentRefResponse{
+		Items:    nil,
+		Total:    int32(sr.Count),
+		Duration: int32(sr.Duration.Milliseconds()),
+	}
+	ids := lo.Map(sr.Docs, func(t *search.DocumentMatch, i int) string {
+		return t.ID
+	})
+	docs := lo.Map(sr.Docs, func(t *search.DocumentMatch, i int) *torrenti.TorrentSearchMatch {
+		return &torrenti.TorrentSearchMatch{
+			Match: t,
+		}
+	})
+	byID := lo.KeyBy(docs, func(t *torrenti.TorrentSearchMatch) string {
+		return t.Match.ID
+	})
+
+	var out []*models.MetaFile
+	err = s.DB.Model(models.MetaFile{}).
+		Where("torrent_hash in (?)", ids).
+		Select([]string{"filename", "content_hash", "torrent_hash", "creation_date", "comment", "created_by"}).
+		Preload("Torrent", func(db *gorm.DB) *gorm.DB {
+			return db.Select([]string{"name", "hash", "total_file_size", "file_count", "is_dir"})
+		}).
+		Find(&out).Error
+	if err != nil {
+		return
+	}
+	hi := highlight.NewHTMLHighlighter()
+	for _, v := range out {
+		doc := byID[v.TorrentHash]
+		doc.Model = v
+
+		if doc.Model.Torrent != nil {
+			doc.HighlightTorrentName = hi.BestFragment(doc.Match.Locations[search.TorrentFieldTorrentFileName], []byte(doc.Model.Torrent.Name))
+		}
+		doc.HighlightFileName = hi.BestFragment(doc.Match.Locations[search.TorrentFieldMetaFileName], []byte(doc.Model.Filename))
+
+		doc.HighlightTorrentName = search.MergeHTMLMark(doc.HighlightTorrentName)
+		doc.HighlightFileName = search.MergeHTMLMark(doc.HighlightFileName)
+	}
+
+	resp.Items = make([]*webv1.SearchTorrentRef, 0, len(out))
+	for _, v := range docs {
+		vv := toItem(v)
+		if vv != nil {
+			resp.Items = append(resp.Items, vv)
+		}
+	}
+	return
+}
+
+func toItem(t *torrenti.TorrentSearchMatch) *webv1.SearchTorrentRef {
+	if t.Model == nil {
+		log.Warn().Str("hash", t.Match.ID).Msg("no model")
+		return nil
+	}
+
+	return &webv1.SearchTorrentRef{
+		Item:                 toTorrentRef(t.Model, 0),
+		HighlightFileName:    t.HighlightFileName,
+		HighlightTorrentName: t.HighlightTorrentName,
+	}
 }
 
 func (s *webServiceServer) ListTorrentRef(ctx context.Context, req *webv1.ListTorrentRefRequest) (resp *webv1.ListTorrentRefResponse, err error) {
@@ -94,9 +181,9 @@ func toTorrent(in *models.Torrent) (out *webv1.Torrent) {
 		return nil
 	}
 	out = &webv1.Torrent{
-		FileName:  in.Name,
-		Hash:      in.Hash,
-		Magnet:    in.Hash,
+		FileName: in.Name,
+		Hash:     in.Hash,
+		// Magnet:    in.Hash,
 		FileSize:  in.TotalFileSize,
 		FileCount: int32(in.FileCount),
 		Ext:       "",

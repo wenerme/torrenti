@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5/middleware"
@@ -160,11 +162,25 @@ func serveGRPC(sc *serve.Context) (err error) {
 	return
 }
 
+var allowedHeaders = map[string]struct{}{
+	"x-request-id": {},
+}
+
+func isHeaderAllowed(key string) (string, bool) {
+	if _, isAllowed := allowedHeaders[key]; isAllowed {
+		return strings.ToUpper(key), true
+	}
+	return fmt.Sprintf("%s%s", runtime.MetadataHeaderPrefix, key), true
+}
+
 func serveGRPCGateway(sc *serve.Context) (err error) {
 	if !_conf.GRPC.Gateway.Enabled {
 		return
 	}
-	gw := runtime.NewServeMux()
+	gw := runtime.NewServeMux(
+		runtime.WithOutgoingHeaderMatcher(isHeaderAllowed),
+	)
+
 	sc.GRPCG = gw
 
 	var gc *grpc.ClientConn
