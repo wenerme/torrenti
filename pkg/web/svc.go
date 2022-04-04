@@ -2,6 +2,9 @@ package web
 
 import (
 	"context"
+	"encoding/json"
+	"github.com/xgfone/bt/bencode"
+	"google.golang.org/protobuf/types/known/structpb"
 	"strings"
 
 	"github.com/blugelabs/bluge/search/highlight"
@@ -37,6 +40,19 @@ type webServiceServer struct {
 	Search *search.Service
 }
 
+func (s *webServiceServer) GetTorrentRefMeta(ctx context.Context, req *webv1.GetTorrentRefMetaRequest) (resp *webv1.GetTorrentRefMetaResponse, err error) {
+	var out *models.MetaFile
+	err = s.DB.Where(models.MetaFile{ContentHash: req.GetHash()}).Preload("Torrent").Find(&out).Error
+	if err == gorm.ErrRecordNotFound {
+		err = status.Errorf(codes.NotFound, "torrent not found")
+		return
+	}
+	resp = &webv1.GetTorrentRefMetaResponse{
+		Meta: &structpb.Struct{},
+	}
+	err = resp.Meta.UnmarshalJSON(out.Raw)
+	return
+}
 func (s *webServiceServer) SearchTorrentRef(ctx context.Context, req *webv1.SearchTorrentRefRequest) (resp *webv1.SearchTorrentRefResponse, err error) {
 	if req.Limit <= 0 || req.Limit > 200 {
 		req.Limit = 100
@@ -163,14 +179,39 @@ func (s *webServiceServer) ListTorrentRef(ctx context.Context, req *webv1.ListTo
 	return
 }
 
-func (s *webServiceServer) GetTorrent(ctx context.Context, req *webv1.GetTorrentRequest) (resp *webv1.GetTorrentResponse, err error) {
+func (s *webServiceServer) GetTorrentRefData(ctx context.Context, req *webv1.GetTorrentRefDataRequest) (resp *webv1.GetTorrentRefDataResponse, err error) {
+	var out *models.MetaFile
+	err = s.DB.Where(models.MetaFile{ContentHash: req.GetHash()}).Preload("Torrent").Find(&out).Error
+	if err == gorm.ErrRecordNotFound {
+		err = status.Errorf(codes.NotFound, "torrent not found")
+		return
+	}
+	if out.Torrent == nil {
+		err = status.Errorf(codes.NotFound, "torrent data not found")
+		return
+	}
+	resp = &webv1.GetTorrentRefDataResponse{
+		Item: toTorrentRef(out, 0),
+	}
+	d := map[string]interface{}{}
+	err = json.Unmarshal(out.Raw, &d)
+	if err != nil {
+		return
+	}
+
+	d = toInt(d).(map[string]interface{})
+	d["info"] = bencode.RawMessage(out.Torrent.InfoBytes)
+	resp.Data, err = bencode.EncodeBytes(d)
+	return
+}
+func (s *webServiceServer) GetTorrentRef(ctx context.Context, req *webv1.GetTorrentRefRequest) (resp *webv1.GetTorrentRefResponse, err error) {
 	var out *models.Torrent
 	err = s.DB.Where(models.Torrent{Hash: req.GetHash()}).Find(&out).Error
 	if err == gorm.ErrRecordNotFound {
 		err = status.Errorf(codes.NotFound, "torrent not found")
 		return
 	}
-	resp = &webv1.GetTorrentResponse{
+	resp = &webv1.GetTorrentRefResponse{
 		Item: toTorrent(out),
 	}
 	return
@@ -210,4 +251,20 @@ func toTorrentRef(in *models.MetaFile, idx int) *webv1.TorrentRef {
 		TorrentHash: in.TorrentHash,
 		Torrent:     toTorrent(in.Torrent),
 	}
+}
+
+func toInt(in interface{}) interface{} {
+	switch vv := in.(type) {
+	case float64:
+		return int64(vv)
+	case []interface{}:
+		for i, v := range vv {
+			vv[i] = toInt(v)
+		}
+	case map[string]interface{}:
+		for k, v := range vv {
+			vv[k] = toInt(v)
+		}
+	}
+	return in
 }

@@ -24,7 +24,9 @@ const _ = grpc.SupportPackageIsVersion7
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type WebServiceClient interface {
 	ListTorrentRef(ctx context.Context, in *ListTorrentRefRequest, opts ...grpc.CallOption) (*ListTorrentRefResponse, error)
-	GetTorrent(ctx context.Context, in *GetTorrentRequest, opts ...grpc.CallOption) (*GetTorrentResponse, error)
+	GetTorrentRef(ctx context.Context, in *GetTorrentRefRequest, opts ...grpc.CallOption) (*GetTorrentRefResponse, error)
+	GetTorrentRefData(ctx context.Context, in *GetTorrentRefDataRequest, opts ...grpc.CallOption) (*GetTorrentRefDataResponse, error)
+	GetTorrentRefMeta(ctx context.Context, in *GetTorrentRefMetaRequest, opts ...grpc.CallOption) (*GetTorrentRefMetaResponse, error)
 	SearchTorrentRef(ctx context.Context, in *SearchTorrentRefRequest, opts ...grpc.CallOption) (*SearchTorrentRefResponse, error)
 }
 
@@ -45,9 +47,27 @@ func (c *webServiceClient) ListTorrentRef(ctx context.Context, in *ListTorrentRe
 	return out, nil
 }
 
-func (c *webServiceClient) GetTorrent(ctx context.Context, in *GetTorrentRequest, opts ...grpc.CallOption) (*GetTorrentResponse, error) {
-	out := new(GetTorrentResponse)
-	err := c.cc.Invoke(ctx, "/media.web.v1.WebService/GetTorrent", in, out, opts...)
+func (c *webServiceClient) GetTorrentRef(ctx context.Context, in *GetTorrentRefRequest, opts ...grpc.CallOption) (*GetTorrentRefResponse, error) {
+	out := new(GetTorrentRefResponse)
+	err := c.cc.Invoke(ctx, "/media.web.v1.WebService/GetTorrentRef", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *webServiceClient) GetTorrentRefData(ctx context.Context, in *GetTorrentRefDataRequest, opts ...grpc.CallOption) (*GetTorrentRefDataResponse, error) {
+	out := new(GetTorrentRefDataResponse)
+	err := c.cc.Invoke(ctx, "/media.web.v1.WebService/GetTorrentRefData", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *webServiceClient) GetTorrentRefMeta(ctx context.Context, in *GetTorrentRefMetaRequest, opts ...grpc.CallOption) (*GetTorrentRefMetaResponse, error) {
+	out := new(GetTorrentRefMetaResponse)
+	err := c.cc.Invoke(ctx, "/media.web.v1.WebService/GetTorrentRefMeta", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +88,9 @@ func (c *webServiceClient) SearchTorrentRef(ctx context.Context, in *SearchTorre
 // for forward compatibility
 type WebServiceServer interface {
 	ListTorrentRef(context.Context, *ListTorrentRefRequest) (*ListTorrentRefResponse, error)
-	GetTorrent(context.Context, *GetTorrentRequest) (*GetTorrentResponse, error)
+	GetTorrentRef(context.Context, *GetTorrentRefRequest) (*GetTorrentRefResponse, error)
+	GetTorrentRefData(context.Context, *GetTorrentRefDataRequest) (*GetTorrentRefDataResponse, error)
+	GetTorrentRefMeta(context.Context, *GetTorrentRefMetaRequest) (*GetTorrentRefMetaResponse, error)
 	SearchTorrentRef(context.Context, *SearchTorrentRefRequest) (*SearchTorrentRefResponse, error)
 	mustEmbedUnimplementedWebServiceServer()
 }
@@ -80,8 +102,16 @@ func (UnimplementedWebServiceServer) ListTorrentRef(context.Context, *ListTorren
 	return nil, status.Errorf(codes.Unimplemented, "method ListTorrentRef not implemented")
 }
 
-func (UnimplementedWebServiceServer) GetTorrent(context.Context, *GetTorrentRequest) (*GetTorrentResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method GetTorrent not implemented")
+func (UnimplementedWebServiceServer) GetTorrentRef(context.Context, *GetTorrentRefRequest) (*GetTorrentRefResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetTorrentRef not implemented")
+}
+
+func (UnimplementedWebServiceServer) GetTorrentRefData(context.Context, *GetTorrentRefDataRequest) (*GetTorrentRefDataResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetTorrentRefData not implemented")
+}
+
+func (UnimplementedWebServiceServer) GetTorrentRefMeta(context.Context, *GetTorrentRefMetaRequest) (*GetTorrentRefMetaResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetTorrentRefMeta not implemented")
 }
 
 func (UnimplementedWebServiceServer) SearchTorrentRef(context.Context, *SearchTorrentRefRequest) (*SearchTorrentRefResponse, error) {
@@ -118,20 +148,56 @@ func _WebService_ListTorrentRef_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
-func _WebService_GetTorrent_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(GetTorrentRequest)
+func _WebService_GetTorrentRef_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTorrentRefRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(WebServiceServer).GetTorrent(ctx, in)
+		return srv.(WebServiceServer).GetTorrentRef(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/media.web.v1.WebService/GetTorrent",
+		FullMethod: "/media.web.v1.WebService/GetTorrentRef",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(WebServiceServer).GetTorrent(ctx, req.(*GetTorrentRequest))
+		return srv.(WebServiceServer).GetTorrentRef(ctx, req.(*GetTorrentRefRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WebService_GetTorrentRefData_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTorrentRefDataRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WebServiceServer).GetTorrentRefData(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/media.web.v1.WebService/GetTorrentRefData",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WebServiceServer).GetTorrentRefData(ctx, req.(*GetTorrentRefDataRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _WebService_GetTorrentRefMeta_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTorrentRefMetaRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(WebServiceServer).GetTorrentRefMeta(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/media.web.v1.WebService/GetTorrentRefMeta",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(WebServiceServer).GetTorrentRefMeta(ctx, req.(*GetTorrentRefMetaRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -166,8 +232,16 @@ var WebService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _WebService_ListTorrentRef_Handler,
 		},
 		{
-			MethodName: "GetTorrent",
-			Handler:    _WebService_GetTorrent_Handler,
+			MethodName: "GetTorrentRef",
+			Handler:    _WebService_GetTorrentRef_Handler,
+		},
+		{
+			MethodName: "GetTorrentRefData",
+			Handler:    _WebService_GetTorrentRefData_Handler,
+		},
+		{
+			MethodName: "GetTorrentRefMeta",
+			Handler:    _WebService_GetTorrentRefMeta_Handler,
 		},
 		{
 			MethodName: "SearchTorrentRef",

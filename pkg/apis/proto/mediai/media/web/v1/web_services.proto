@@ -5,6 +5,7 @@ package media.web.v1;
 import "google/api/annotations.proto";
 import "google/api/httpbody.proto";
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
 import "google/protobuf/duration.proto";
 import "media/common/file.proto";
 
@@ -15,9 +16,19 @@ service WebService {
       get: "/torrents"
     };
   }
-  rpc GetTorrent(GetTorrentRequest) returns (GetTorrentResponse) {
+  rpc GetTorrentRef(GetTorrentRefRequest) returns (GetTorrentRefResponse) {
     option (google.api.http) = {
       get: "/torrents/{hash}"
+    };
+  }
+  rpc GetTorrentRefData(GetTorrentRefDataRequest) returns (GetTorrentRefDataResponse) {
+    option (google.api.http) = {
+      get: "/torrents/{hash}/data"
+    };
+  }
+  rpc GetTorrentRefMeta(GetTorrentRefMetaRequest) returns (GetTorrentRefMetaResponse) {
+    option (google.api.http) = {
+      get: "/torrents/{hash}/meta"
     };
   }
   rpc SearchTorrentRef(SearchTorrentRefRequest) returns (SearchTorrentRefResponse) {
@@ -26,6 +37,22 @@ service WebService {
     };
   }
 }
+
+message GetTorrentRefDataRequest{
+  string hash = 1;
+}
+message GetTorrentRefDataResponse{
+  bytes data = 1;
+  TorrentRef item = 2;
+}
+
+message GetTorrentRefMetaRequest{
+  string hash = 1;
+}
+message GetTorrentRefMetaResponse{
+  google.protobuf.Struct meta = 1;
+}
+
 message SearchTorrentRefRequest {
   string search = 1;
   int32 limit = 2;
@@ -43,10 +70,10 @@ message SearchTorrentRef {
   string highlight_torrent_name = 3;
 }
 
-message GetTorrentRequest {
+message GetTorrentRefRequest {
   string hash = 1;
 }
-message GetTorrentResponse {
+message GetTorrentRefResponse {
   Torrent item = 1;
 }
 
