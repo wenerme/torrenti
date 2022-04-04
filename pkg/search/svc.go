@@ -2,6 +2,7 @@ package search
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -21,13 +22,18 @@ func NewService(opts NewServiceOptions) (s *Service, err error) {
 	s = &Service{
 		Torrent: &CollectionIndex{},
 	}
-	{
-		config := bluge.DefaultConfig(filepath.Join(opts.DataDir, "torrent"))
+	config := bluge.DefaultConfig(filepath.Join(opts.DataDir, "torrent"))
+	if os.Getenv("BLUGE_WRITE") == "true" {
 		s.Torrent.Writer, err = bluge.OpenWriter(config)
 		if err != nil {
 			return
 		}
 		s.Torrent.Reader, err = s.Torrent.Writer.Reader()
+		if err != nil {
+			return
+		}
+	} else {
+		s.Torrent.Reader, err = bluge.OpenReader(config)
 		if err != nil {
 			return
 		}
